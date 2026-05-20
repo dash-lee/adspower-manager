@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}日志查看 - AdsPower Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>📋 日志查看</h1>
+    <p class="text-muted">查看系统操作日志和环境运行记录</p>
+</div>
+
+<!-- 选项卡 -->
+<div class="tabs">
+    <button class="tab-btn active" onclick="switchLogTab('operation')">操作日志</button>
+    <button class="tab-btn" onclick="switchLogTab('environment')">环境运行日志</button>
+</div>
+
+<!-- 过滤栏 -->
+<div class="filter-bar">
+    <select id="log-level-filter" onchange="loadCurrentLogs()">
+        <option value="">全部级别</option>
+        <option value="INFO">INFO</option>
+        <option value="WARNING">WARNING</option>
+        <option value="ERROR">ERROR</option>
+    </select>
+    <select id="log-module-filter" onchange="loadCurrentLogs()">
+        <option value="">全部模块</option>
+        <option value="adspower_client">adspower_client</option>
+        <option value="env_manager">env_manager</option>
+        <option value="scheduler">scheduler</option>
+        <option value="system">system</option>
+    </select>
+    <input type="text" id="log-keyword" placeholder="关键词搜索..." onkeyup="if(event.key==='Enter')loadCurrentLogs()">
+    <button class="btn btn-sm btn-secondary" onclick="loadCurrentLogs()">🔍 搜索</button>
+</div>
+
+<!-- 操作日志 -->
+<div class="tab-content active" id="tab-operation">
+    <div class="card">
+        <table class="data-table" id="op-log-table">
+            <thead>
+                <tr>
+                    <th>时间</th>
+                    <th>级别</th>
+                    <th>模块</th>
+                    <th>消息</th>
+                    <th>详情</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td colspan="5" class="text-center text-muted">加载中...</td></tr>
+            </tbody>
+        </table>
+        <div class="pagination" id="op-pagination"></div>
+    </div>
+</div>
+
+<!-- 环境运行日志 -->
+<div class="tab-content" id="tab-environment">
+    <div class="card">
+        <table class="data-table" id="env-log-table">
+            <thead>
+                <tr>
+                    <th>时间</th>
+                    <th>环境ID</th>
+                    <th>名称</th>
+                    <th>事件类型</th>
+                    <th>IP</th>
+                    <th>运行时长</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td colspan="6" class="text-center text-muted">加载中...</td></tr>
+            </tbody>
+        </table>
+        <div class="pagination" id="env-pagination"></div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentLogTab = 'operation';
+let opPage = 1, envPage = 1, limit = 50;
+
+function switchLogTab(tab) {
+    currentLogTab = tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    // 过滤栏仅在操作日志时显示
+    document.querySelector('.filter-bar').style.display = tab === 'operation' ? 'flex' : 'none';
+    loadCurrentLogs();
+}
+
+async function loadCurrentLogs() {
+    if (currentLogTab === 'operation') loadOperationLogs();
+    else loadEnvRuntimeLogs();
+}
+
+async function loadOperationLogs(page = 1) {
+    opPage = page;
+    const level = document.getElementById('log-level-filter').value;
+    const module = document.getElementById('log-module-filter').value;
+    const keyword = document.getElementById('log-keyword').value;
+    
+    let url = `/api/logs/operation?page=${page}&limit=${limit}`;
+    if (level) url += `&level=${level}`;
+    if (module) url += `&module=${module}`;
+    if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
+    
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.code === 0) {
+        const tbody = document.querySelector('#op-log-table tbody');
+        tbody.innerHTML = data.data.list.map(l => `
+            <tr>
+                <td>${formatTime(l.created_at)}</td>
+                <td><span class="badge badge-${l.level.toLowerCase()}">${l.level}</span></td>
+                <td>${l.module}</td>
+                <td>${escapeHtml(l.message)}</td>
+                <td>${l.detail ? `<button class="btn btn-sm btn-secondary" onclick="alert('${escapeHtml(l.detail).replace(/'/g, '\\\'')}')">查看</button>` : '-'}</td>
+            </tr>
+        `).join('') || '<tr><td colspan="5" class="text-center text-muted">暂无日志</td></tr>';
+        renderPagination('op', data.data.total, page);
+    }
+}
+
+async function loadEnvRuntimeLogs(page = 1) {
+    envPage = page;
+    const resp = await fetch(`/api/logs/environment?page=${page}&limit=${limit}`);
+    const data = await resp.json();
+    if (data.code === 0) {
+        const tbody = document.querySelector('#env-log-table tbody');
+        tbody.innerHTML = data.data.list.map(l => `
+            <tr>
+                <td>${formatTime(l.created_at)}</td>
+                <td><code>${l.profile_id}</code></td>
+                <td>${l.env_name || '-'}</td>
+                <td>${l.event_type}</td>
+                <td>${l.ip_address || '-'}</td>
+                <td>${l.duration_seconds ? l.duration_seconds + '秒' : '-'}</td>
+            </tr>
+        `).join('') || '<tr><td colspan="6" class="text-center text-muted">暂无记录</td></tr>';
+        renderPagination('env', data.data.total, page);
+    }
+}
+
+function renderPagination(prefix, total, current) {
+    const totalPages = Math.ceil(total / limit);
+    const container = document.getElementById(prefix + '-pagination');
+    if (totalPages <= 1) { container.innerHTML = ''; return; }
+    
+    let html = `<span>共 ${total} 条 / ${totalPages} 页 </span>`;
+    for (let i = 1; i <= totalPages; i++) {
+        html += `<button class="btn btn-sm ${i === current ? 'btn-primary' : 'btn-secondary'}" 
+                 onclick="${prefix === 'op' ? 'loadOperationLogs' : 'loadEnvRuntimeLogs'}(${i})">${i}</button>`;
+    }
+    container.innerHTML = html;
+}
+
+document.addEventListener('DOMContentLoaded', loadCurrentLogs);
+</script>
+{% endblock %}

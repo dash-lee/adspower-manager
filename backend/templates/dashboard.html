@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}仪表盘 - AdsPower Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>📊 仪表盘</h1>
+    <p class="text-muted">系统概览和快捷操作</p>
+</div>
+
+<!-- 状态卡片 -->
+<div class="stat-cards" id="stat-cards">
+    <div class="stat-card">
+        <div class="stat-icon">🔌</div>
+        <div class="stat-info">
+            <div class="stat-value" id="stat-api">--</div>
+            <div class="stat-label">API 状态</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">🌐</div>
+        <div class="stat-info">
+            <div class="stat-value" id="stat-envs">--</div>
+            <div class="stat-label">环境总数</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">▶️</div>
+        <div class="stat-info">
+            <div class="stat-value" id="stat-active">--</div>
+            <div class="stat-label">已启动</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">📋</div>
+        <div class="stat-info">
+            <div class="stat-value" id="stat-tasks">--</div>
+            <div class="stat-label">待处理任务</div>
+        </div>
+    </div>
+</div>
+
+<!-- 操作按钮 -->
+<div class="action-bar">
+    <button class="btn btn-primary" onclick="runCheck()">🔍 执行初始化检查</button>
+    <button class="btn btn-secondary" onclick="processTasks()">⚡ 处理任务队列</button>
+    <button class="btn btn-warning" onclick="refreshDashboard()">🔄 刷新数据</button>
+</div>
+
+<!-- 检查结果 -->
+<div class="card" id="check-result" style="display:none;">
+    <h3>检查结果</h3>
+    <div id="check-content"></div>
+</div>
+
+<!-- 已启动环境 -->
+<div class="card">
+    <h3>▶️ 已启动环境</h3>
+    <div id="active-profiles-list">
+        <p class="text-muted">加载中...</p>
+    </div>
+</div>
+
+<!-- 最近日志 -->
+<div class="card">
+    <h3>📋 最近操作日志</h3>
+    <table class="data-table" id="recent-logs-table">
+        <thead>
+            <tr>
+                <th>时间</th>
+                <th>级别</th>
+                <th>模块</th>
+                <th>消息</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td colspan="4" class="text-center text-muted">加载中...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ===== 仪表盘脚本 =====
+
+// 页面加载时刷新
+document.addEventListener('DOMContentLoaded', refreshDashboard);
+
+// 检查 API 状态
+async function checkApiStatus() {
+    try {
+        const resp = await fetch('/api/status');
+        const data = await resp.json();
+        if (data.code === 0) {
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
+            if (data.data.adspower_ok) {
+                dot.style.color = '#4ade80';
+                text.textContent = 'API 正常';
+            } else {
+                dot.style.color = '#f87171';
+                text.textContent = 'API 异常';
+            }
+        }
+    } catch(e) {
+        document.getElementById('status-dot').style.color = '#f87171';
+        document.getElementById('status-text').textContent = '连接失败';
+    }
+}
+setInterval(checkApiStatus, 30000);
+checkApiStatus();
+
+// 刷新仪表盘数据
+async function refreshDashboard() {
+    try {
+        // 并行请求
+        const [checkResp, tasksResp, activeResp, logsResp] = await Promise.all([
+            fetch('/api/env/check'),
+            fetch('/api/env/tasks?status=pending'),
+            fetch('/api/env/browser/local-active'),
+            fetch('/api/logs/operation?limit=10'),
+        ]);
+
+        const checkData = await checkResp.json();
+        const tasksData = await tasksResp.json();
+        const activeData = await activeResp.json();
+        const logsData = await logsResp.json();
+
+        // 更新状态卡片
+        if (checkData.code === 0) {
+            document.getElementById('stat-api').textContent = checkData.data.api_ok ? '✅ 正常' : '❌ 异常';
+            document.getElementById('stat-api').style.color = checkData.data.api_ok ? '#4ade80' : '#f87171';
+            document.getElementById('stat-envs').textContent = checkData.data.total_profiles;
+            document.getElementById('stat-active').textContent = checkData.data.active_profiles?.length || 0;
+        }
+        document.getElementById('stat-tasks').textContent = tasksData.data?.length || 0;
+
+        // 更新已启动环境列表
+        if (activeData.code === 0) {
+            const actives = activeData.data?.list || [];
+            const container = document.getElementById('active-profiles-list');
+            if (actives.length === 0) {
+                container.innerHTML = '<p class="text-muted">暂无已启动环境</p>';
+            } else {
+                container.innerHTML = actives.map(a => 
+                    `<div class="env-tag">${a.user_id || a.profile_id} ${a.name || ''}</div>`
+                ).join('');
+            }
+        }
+
+        // 更新最近日志
+        const tbody = document.querySelector('#recent-logs-table tbody');
+        if (logsData.code === 0 && logsData.data.list) {
+            tbody.innerHTML = logsData.data.list.map(l => `
+                <tr>
+                    <td>${formatTime(l.created_at)}</td>
+                    <td><span class="badge badge-${l.level.toLowerCase()}">${l.level}</span></td>
+                    <td>${l.module}</td>
+                    <td>${escapeHtml(l.message)}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="4" class="text-center text-muted">暂无日志</td></tr>';
+        }
+    } catch(e) {
+        console.error('刷新仪表盘失败:', e);
+    }
+}
+
+// 执行初始化检查
+async function runCheck() {
+    showToast('正在执行初始化检查...', 'info');
+    try {
+        const resp = await fetch('/api/env/check');
+        const data = await resp.json();
+        if (data.code === 0) {
+            const d = data.data;
+            let html = `
+                <p><strong>API:</strong> ${d.api_ok ? '✅ 正常' : '❌ 异常'} — ${d.api_message}</p>
+                <p><strong>环境总数:</strong> ${d.total_profiles}</p>
+                <p><strong>保留环境:</strong> ${d.preserved_count}</p>
+                <p><strong>缺失保留:</strong> ${d.missing_preserved.length} (配置中有但实际不存在)</p>
+                <p><strong>可清理:</strong> ${d.unpreserved_profiles.length} (实际存在但未保留)</p>
+                <p><strong>已启动:</strong> ${d.active_profiles.length}</p>
+            `;
+            if (d.missing_preserved.length > 0) {
+                html += '<p><strong>⚠️ 缺失的保留环境:</strong></p><ul>';
+                d.missing_preserved.forEach(m => html += `<li>${m.env_name} (${m.profile_id})</li>`);
+                html += '</ul>';
+            }
+            document.getElementById('check-content').innerHTML = html;
+            document.getElementById('check-result').style.display = 'block';
+            showToast('检查完成', 'success');
+        } else {
+            showToast('检查失败: ' + data.msg, 'error');
+        }
+        refreshDashboard();
+    } catch(e) {
+        showToast('检查异常: ' + e.message, 'error');
+    }
+}
+
+// 处理任务队列
+async function processTasks() {
+    showToast('正在处理任务队列...', 'info');
+    try {
+        const resp = await fetch('/api/env/tasks/process', {method: 'POST'});
+        const data = await resp.json();
+        showToast(data.msg, data.code === 0 ? 'success' : 'error');
+        refreshDashboard();
+    } catch(e) {
+        showToast('处理失败: ' + e.message, 'error');
+    }
+}
+</script>
+{% endblock %}

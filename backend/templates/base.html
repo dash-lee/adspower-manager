@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AdsPower Manager{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- 侧边导航栏 -->
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h2>🔧 AdsPower Manager</h2>
+            <small>环境管理后台</small>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="/dashboard" class="nav-link {% if request.path == '/dashboard' %}active{% endif %}">
+                📊 仪表盘
+            </a></li>
+            <li><a href="/environments" class="nav-link {% if request.path == '/environments' %}active{% endif %}">
+                🌐 环境管理
+            </a></li>
+            <li><a href="/config" class="nav-link {% if request.path == '/config' %}active{% endif %}">
+                ⚙️ 配置管理
+            </a></li>
+            <li><a href="/logs" class="nav-link {% if request.path == '/logs' %}active{% endif %}">
+                📋 日志查看
+            </a></li>
+        </ul>
+        <div class="sidebar-footer" id="api-status">
+            <span class="status-indicator" id="status-dot">●</span>
+            <span id="status-text">检查中...</span>
+        </div>
+    </nav>
+
+    <!-- 主内容区 -->
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Toast 通知容器 -->
+    <div id="toast-container"></div>
+
+    <script src="/static/js/app.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
