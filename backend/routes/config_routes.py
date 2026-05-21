@@ -46,6 +46,7 @@ def get_all_general_config():
                 "config_value": c.config_value,
                 "category": c.category,
                 "remark": c.remark,
+                "operator": c.operator,
                 "updated_at": c.updated_at.isoformat() if c.updated_at else None,
             }
             for c in configs
@@ -102,12 +103,14 @@ def upsert_general_config():
         existing.config_value = str(data["config_value"])
         existing.category = data.get("category", existing.category)
         existing.remark = data.get("remark", existing.remark)
+        existing.operator = data.get("operator", existing.operator)
     else:
         new_config = GeneralConfig(
             config_key=data["config_key"],
             config_value=str(data["config_value"]),
             category=data.get("category", "general"),
             remark=data.get("remark", ""),
+            operator=data.get("operator", ""),
         )
         db.session.add(new_config)
     db.session.commit()
@@ -156,6 +159,7 @@ def get_all_proxy_config():
                 "proxy_password": "***" if p.proxy_password else "",  # 密码脱敏
                 "enabled": p.enabled,
                 "remark": p.remark,
+                "operator": p.operator,
                 "created_at": p.created_at.isoformat() if p.created_at else None,
             }
             for p in proxies
@@ -203,6 +207,7 @@ def create_proxy_config():
         proxy_password=data.get("proxy_password", ""),
         enabled=data.get("enabled", 1),
         remark=data.get("remark", ""),
+        operator=data.get("operator", ""),
     )
     db.session.add(proxy)
     db.session.commit()
@@ -227,7 +232,7 @@ def update_proxy_config(proxy_id):
     # 更新传入的字段
     for field in ["ads_proxy_id", "name", "proxy_soft", "proxy_type",
                    "proxy_host", "proxy_port", "proxy_user", "proxy_password",
-                   "enabled", "remark"]:
+                   "enabled", "remark", "operator"]:
         if field in data:
             setattr(proxy, field, str(data[field]) if field not in ["enabled"] else int(data[field]))
 
@@ -280,6 +285,7 @@ def get_all_fingerprints():
                 "weight": f.weight,
                 "enabled": f.enabled,
                 "remark": f.remark,
+                "operator": f.operator,
             }
             for f in items
         ],
@@ -311,6 +317,7 @@ def create_fingerprint_item():
         weight=data.get("weight", 1),
         enabled=data.get("enabled", 1),
         remark=data.get("remark", ""),
+        operator=data.get("operator", ""),
     )
     db.session.add(item)
     db.session.commit()
@@ -332,7 +339,7 @@ def update_fingerprint_item(item_id):
     if not data:
         return jsonify({"code": -1, "data": None, "msg": "请求体为空"})
 
-    for field in ["param_name", "param_value", "weight", "enabled", "remark"]:
+    for field in ["param_name", "param_value", "weight", "enabled", "remark", "operator"]:
         if field in data:
             setattr(item, field, data[field])
 
@@ -375,6 +382,7 @@ def get_all_preserved():
                 "profile_id": e.profile_id,
                 "env_name": e.env_name,
                 "remark": e.remark,
+                "operator": e.operator,
                 "created_at": e.created_at.isoformat() if e.created_at else None,
             }
             for e in envs
@@ -407,6 +415,7 @@ def add_preserved_env():
         profile_id=data["profile_id"],
         env_name=data.get("env_name", ""),
         remark=data.get("remark", ""),
+        operator=data.get("operator", ""),
     )
     db.session.add(env)
     db.session.commit()
@@ -447,12 +456,14 @@ def init_default_configs():
 
     # --- 通用配置默认值 ---
     defaults = [
-        ("adspower_api_url", "http://local.adspower.net:50325", "general", "AdsPower Local API 地址"),
-        ("adspower_api_key", "", "general", "AdsPower API 密钥（在客户端→自动化→API中获取）"),
+        ("adspower_api_url", "http://local.adspower.net:50325", "general", "AdsPower Local API 地址（修改后需点「重载客户端」）"),
+        ("adspower_api_key", "", "general", "AdsPower API 密钥，在客户端→账号管理→设置→API 中获取（修改后需点「重载客户端」）"),
         ("default_group_id", "0", "general", "创建环境时的默认分组ID（0=默认分组）"),
-        ("task_poll_interval", "30", "general", "任务队列轮询间隔（秒）"),
-        ("auto_check_interval", "3600", "general", "自动状态检查间隔（秒）"),
-        ("max_env_limit", "100", "general", "环境数量上限（超过后不再创建）"),
+        ("task_poll_interval", "30", "general", "任务队列轮询间隔（秒，修改后即时生效）"),
+        ("auto_check_interval", "3600", "general", "自动状态检查间隔（秒，修改后即时生效）"),
+        ("max_env_limit", "100", "general", "环境数量上限（超过后无法创建新环境）"),
+        ("log_retention_days", "7", "general", "操作日志保留天数（超过自动清理）"),
+        ("batch_delete_limit", "100", "general", "批量删除每批最大数量"),
     ]
     for key, value, category, remark in defaults:
         existing = GeneralConfig.query.filter_by(config_key=key).first()

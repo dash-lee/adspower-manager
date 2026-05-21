@@ -323,7 +323,28 @@ class EnvManager:
                 "error": str,         # 失败时的错误信息
             }
         """
-        # 3.1 选择代理
+        # 3.0 检查环境数量上限
+        max_limit = self._get_config_int("max_env_limit", 100)
+        all_profiles = self.client.get_all_profiles()
+        current_count = len(all_profiles)
+        if current_count >= max_limit:
+            error_msg = f"环境数量已达上限 ({current_count}/{max_limit})，无法创建新环境。请在配置管理中调高 max_env_limit。"
+            logger.warning(error_msg)
+            return {
+                "success": False,
+                "profile_id": None,
+                "profile_no": None,
+                "fingerprint": {},
+                "error": error_msg,
+            }
+
+        # 3.1 读取默认分组ID（如果未指定）
+        if not group_id or group_id == "0":
+            default_group = self._get_config("default_group_id", "0")
+            if default_group and default_group != "0":
+                group_id = default_group
+
+        # 3.2 选择代理
         if not proxy_id:
             proxy = self._select_proxy()
             if proxy:
@@ -333,7 +354,7 @@ class EnvManager:
                     # 如果没有 ads_proxy_id，直接使用代理配置
                     pass  # 下面会构建 user_proxy_config
 
-        # 3.2 生成指纹配置
+        # 3.3 生成指纹配置
         if use_random_fingerprint and not custom_fingerprint:
             fingerprint = self.generate_fingerprint()
         elif custom_fingerprint:
@@ -341,7 +362,7 @@ class EnvManager:
         else:
             fingerprint = self.generate_fingerprint()
 
-        # 3.3 构建创建请求
+        # 3.4 构建创建请求
         # 构建环境名称
         if not env_name:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -355,7 +376,7 @@ class EnvManager:
         if not proxy_id and proxy:
             user_proxy_config = proxy.to_api_payload()
 
-        # 3.4 调用 API 创建
+        # 3.5 调用 API 创建
         resp = self.client.create_profile(
             group_id=group_id,
             fingerprint_config=fingerprint,
@@ -365,7 +386,7 @@ class EnvManager:
             open_urls=open_urls,
         )
 
-        # 3.5 处理结果
+        # 3.6 处理结果
         result = {
             "success": False,
             "profile_id": None,

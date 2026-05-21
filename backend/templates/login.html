@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - Ads Manager</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        /* 登录页面专用样式：全屏居中 */
+        body.login-page {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: var(--bg-primary);
+        }
+        .login-box {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 40px;
+            width: 380px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+        }
+        .login-box h1 {
+            text-align: center;
+            margin-bottom: 8px;
+            color: var(--accent);
+            font-size: 22px;
+        }
+        .login-box .subtitle {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 13px;
+            margin-bottom: 28px;
+        }
+        .login-box .form-group { margin-bottom: 18px; }
+        .login-box .form-group label { margin-bottom: 6px; }
+        .login-box .btn {
+            width: 100%;
+            justify-content: center;
+            padding: 10px 0;
+            font-size: 16px;
+            margin-top: 8px;
+        }
+        .login-error {
+            color: var(--error);
+            font-size: 13px;
+            text-align: center;
+            margin-top: 12px;
+            display: none;
+        }
+    </style>
+</head>
+<body class="login-page">
+    <div class="login-box">
+        <h1>🔧 Ads Manager</h1>
+        <p class="subtitle">环境管理后台</p>
+        <form id="login-form" onsubmit="doLogin(event)">
+            <div class="form-group">
+                <label>用户名</label>
+                <input type="text" id="username" placeholder="请输入用户名" autocomplete="username" required autofocus>
+            </div>
+            <div class="form-group">
+                <label>密码</label>
+                <input type="password" id="password" placeholder="请输入密码" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn btn-primary" id="login-btn">🔐 登录</button>
+            <p class="login-error" id="login-error"></p>
+        </form>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <script src="/static/js/app.js"></script>
+    <script>
+    async function doLogin(e) {
+        e.preventDefault();
+        const btn = document.getElementById('login-btn');
+        const errorEl = document.getElementById('login-error');
+        errorEl.style.display = 'none';
+        btn.textContent = '登录中...';
+        btn.disabled = true;
+
+        const resp = await fetch('/auth/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                username: document.getElementById('username').value.trim(),
+                password: document.getElementById('password').value,
+            })
+        });
+        const data = await resp.json();
+
+        if (data.code === 0) {
+            showToast('登录成功', 'success');
+            // 跳转到用户有权限的第一个页面
+            const perms = data.data.permissions || [];
+            const permPageMap = {
+                dashboard: '/dashboard', environments: '/environments',
+                proxy: '/proxy', config: '/config', logs: '/logs'
+            };
+            let redirectTo = '/dashboard'; // 默认
+            if (data.data.role === 'admin') {
+                redirectTo = '/dashboard';
+            } else {
+                for (const p of perms) {
+                    if (permPageMap[p]) { redirectTo = permPageMap[p]; break; }
+                }
+            }
+            setTimeout(() => { window.location.href = redirectTo; }, 500);
+        } else {
+            errorEl.textContent = data.msg;
+            errorEl.style.display = 'block';
+            btn.textContent = '🔐 登录';
+            btn.disabled = false;
+        }
+    }
+    </script>
+</body>
+</html>

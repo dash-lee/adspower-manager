@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}配置管理 - AdsPower Manager{% endblock %}
+{% block title %}配置管理 - Ads Manager{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -10,7 +10,6 @@
 <!-- 选项卡 -->
 <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('general')">通用配置</button>
-    <button class="tab-btn" onclick="switchTab('proxy')">代理配置</button>
     <button class="tab-btn" onclick="switchTab('fingerprint')">指纹随机池</button>
     <button class="tab-btn" onclick="switchTab('preserved')">环境保留</button>
 </div>
@@ -18,54 +17,158 @@
 <!-- ===== 通用配置 ===== -->
 <div class="tab-content active" id="tab-general">
     <div class="card">
-        <h3>通用配置 <button class="btn btn-sm btn-primary" onclick="showAddGeneralForm()">+ 添加</button></h3>
+        <h3>通用配置 <button class="btn btn-sm btn-primary" onclick="openModal('general-modal')">+ 添加</button>
+            <button class="btn btn-sm btn-warning" onclick="reloadClient()" style="margin-left:8px;" title="修改 API URL/Key 后点击此按钮即时生效">🔄 重载客户端</button>
+        </h3>
         <table class="data-table" id="general-table">
             <thead>
-                <tr><th>配置键</th><th>值</th><th>分类</th><th>备注</th><th>操作</th></tr>
+                <tr><th>配置键</th><th>值</th><th>分类</th><th>备注</th><th>操作人</th><th>操作</th></tr>
             </thead>
-            <tbody><tr><td colspan="5" class="text-center text-muted">加载中...</td></tr></tbody>
+            <tbody><tr><td colspan="6" class="text-center text-muted">加载中...</td></tr></tbody>
         </table>
     </div>
 </div>
 
-<!-- ===== 代理配置 ===== -->
-<div class="tab-content" id="tab-proxy">
-    <div class="card">
-        <h3>代理配置 <button class="btn btn-sm btn-primary" onclick="showAddProxyForm()">+ 添加代理</button></h3>
-        <table class="data-table" id="proxy-table">
-            <thead>
-                <tr><th>名称</th><th>类型</th><th>主机:端口</th><th>状态</th><th>备注</th><th>操作</th></tr>
-            </thead>
-            <tbody><tr><td colspan="6" class="text-center text-muted">加载中...</td></tr></tbody>
-        </table>
+<!-- 通用配置添加/编辑弹窗 -->
+<div class="modal" id="general-modal">
+    <div class="modal-content">
+        <span class="modal-close" onclick="closeModal('general-modal')">&times;</span>
+        <h2 id="general-modal-title">添加通用配置</h2>
+        <form id="general-form" onsubmit="submitGeneralForm(event)">
+            <input type="hidden" name="id" value="">
+            <div class="form-group">
+                <label>配置键 <span style="color:var(--error)">*</span></label>
+                <input type="text" name="config_key" placeholder="如 adspower_api_url" required>
+            </div>
+            <div class="form-group">
+                <label>配置值 <span style="color:var(--error)">*</span></label>
+                <input type="text" name="config_value" placeholder="配置的值" required>
+            </div>
+            <div class="form-group">
+                <label>分类</label>
+                <select name="category">
+                    <option value="general">general（通用）</option>
+                    <option value="proxy">proxy（代理）</option>
+                    <option value="fingerprint">fingerprint（指纹）</option>
+                    <option value="environment">environment（环境）</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <input type="text" name="remark" placeholder="说明这个配置的用途">
+            </div>
+            <div class="form-group">
+                <label>操作人</label>
+                <input type="text" name="operator" placeholder="谁添加的（如 admin / 张三）">
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('general-modal')">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
     </div>
 </div>
 
 <!-- ===== 指纹随机池 ===== -->
 <div class="tab-content" id="tab-fingerprint">
     <div class="card">
-        <h3>指纹随机池 <button class="btn btn-sm btn-primary" onclick="showAddFingerprintForm()">+ 添加候选项</button>
+        <h3>指纹随机池 <button class="btn btn-sm btn-primary" onclick="openModal('fingerprint-modal')">+ 添加候选项</button>
             <button class="btn btn-sm btn-secondary" onclick="initDefaults()" style="margin-left:8px;">📦 初始化默认值</button>
         </h3>
         <table class="data-table" id="fingerprint-table">
             <thead>
-                <tr><th>参数名</th><th>候选值</th><th>权重</th><th>状态</th><th>备注</th><th>操作</th></tr>
+                <tr><th>参数名</th><th>候选值</th><th>权重</th><th>状态</th><th>备注</th><th>操作人</th><th>操作</th></tr>
             </thead>
-            <tbody><tr><td colspan="6" class="text-center text-muted">加载中...</td></tr></tbody>
+            <tbody><tr><td colspan="7" class="text-center text-muted">加载中...</td></tr></tbody>
         </table>
+    </div>
+</div>
+
+<!-- 指纹随机池添加弹窗 -->
+<div class="modal" id="fingerprint-modal">
+    <div class="modal-content">
+        <span class="modal-close" onclick="closeModal('fingerprint-modal')">&times;</span>
+        <h2>添加指纹候选项</h2>
+        <form id="fingerprint-form" onsubmit="submitFingerprintForm(event)">
+            <div class="form-group">
+                <label>参数名 <span style="color:var(--error)">*</span></label>
+                <select name="param_name" required>
+                    <option value="">-- 请选择 --</option>
+                    <option value="screen_resolution">screen_resolution（屏幕分辨率）</option>
+                    <option value="fonts">fonts（字体列表）</option>
+                    <option value="hardware_concurrency">hardware_concurrency（CPU核心数）</option>
+                    <option value="device_memory">device_memory（内存大小）</option>
+                    <option value="media_devices">media_devices（媒体设备）</option>
+                    <option value="media_devices_num">media_devices_num（自定义设备数）</option>
+                    <option value="language">language（语言）</option>
+                    <option value="timezone">timezone（时区）</option>
+                    <option value="webrtc">webrtc（WebRTC）</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>候选值 <span style="color:var(--error)">*</span></label>
+                <textarea name="param_value" placeholder="输入候选值（如 1920_1080）" rows="3" required style="width:100%;padding:8px 12px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:14px;resize:vertical;font-family:monospace;"></textarea>
+            </div>
+            <div class="form-group">
+                <label>权重 (1-10，越大被选中概率越高)</label>
+                <input type="number" name="weight" value="5" min="1" max="10" style="width:100px;">
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <input type="text" name="remark" placeholder="说明这个候选项">
+            </div>
+            <div class="form-group">
+                <label>操作人</label>
+                <input type="text" name="operator" placeholder="谁添加的">
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('fingerprint-modal')">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
     </div>
 </div>
 
 <!-- ===== 环境保留 ===== -->
 <div class="tab-content" id="tab-preserved">
     <div class="card">
-        <h3>环境保留 <button class="btn btn-sm btn-primary" onclick="showAddPreservedForm()">+ 添加保留环境</button></h3>
+        <h3>环境保留 <button class="btn btn-sm btn-primary" onclick="openModal('preserved-modal')">+ 添加保留环境</button></h3>
         <table class="data-table" id="preserved-table">
             <thead>
-                <tr><th>环境ID</th><th>名称</th><th>备注</th><th>操作</th></tr>
+                <tr><th>环境ID</th><th>名称</th><th>备注</th><th>操作人</th><th>操作</th></tr>
             </thead>
-            <tbody><tr><td colspan="4" class="text-center text-muted">加载中...</td></tr></tbody>
+            <tbody><tr><td colspan="5" class="text-center text-muted">加载中...</td></tr></tbody>
         </table>
+    </div>
+</div>
+
+<!-- 环境保留添加弹窗 -->
+<div class="modal" id="preserved-modal">
+    <div class="modal-content">
+        <span class="modal-close" onclick="closeModal('preserved-modal')">&times;</span>
+        <h2>添加保留环境</h2>
+        <form id="preserved-form" onsubmit="submitPreservedForm(event)">
+            <div class="form-group">
+                <label>环境 Profile ID <span style="color:var(--error)">*</span></label>
+                <input type="text" name="profile_id" placeholder="如 h1yynkm" required>
+            </div>
+            <div class="form-group">
+                <label>环境名称</label>
+                <input type="text" name="env_name" placeholder="便于识别的名称">
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <input type="text" name="remark" placeholder="保留原因等说明">
+            </div>
+            <div class="form-group">
+                <label>操作人</label>
+                <input type="text" name="operator" placeholder="谁添加的">
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('preserved-modal')">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -74,6 +177,14 @@
 {% block extra_js %}
 <script>
 let currentTab = 'general';
+
+// ===== 模态框通用函数 =====
+function openModal(id) {
+    document.getElementById(id).style.display = 'flex';
+}
+function closeModal(id) {
+    document.getElementById(id).style.display = 'none';
+}
 
 function switchTab(tab) {
     currentTab = tab;
@@ -86,7 +197,6 @@ function switchTab(tab) {
 
 function loadTabData(tab) {
     if (tab === 'general') loadGeneralConfig();
-    else if (tab === 'proxy') loadProxyConfig();
     else if (tab === 'fingerprint') loadFingerprintConfig();
     else if (tab === 'preserved') loadPreservedConfig();
 }
@@ -99,10 +209,11 @@ async function loadGeneralConfig() {
     if (data.code === 0) {
         tbody.innerHTML = data.data.map(c => `
             <tr>
-                <td><code>${c.config_key}</code></td>
-                <td><input type="text" value="${escapeHtml(c.config_value)}" data-key="${c.config_key}" class="inline-input" onchange="updateGeneral('${c.config_key}', this.value)"></td>
-                <td>${c.category}</td>
-                <td>${c.remark}</td>
+                <td><code>${escapeHtml(c.config_key)}</code></td>
+                <td><input type="text" value="${escapeHtml(c.config_value)}" data-key="${escapeHtml(c.config_key)}" class="inline-input" onchange="updateGeneral('${escapeHtml(c.config_key)}', this.value)"></td>
+                <td>${escapeHtml(c.category) || '-'}</td>
+                <td>${escapeHtml(c.remark) || '-'}</td>
+                <td>${escapeHtml(c.operator) || '-'}</td>
                 <td><button class="btn btn-sm btn-danger" onclick="deleteGeneral(${c.id})">删除</button></td>
             </tr>
         `).join('');
@@ -110,12 +221,29 @@ async function loadGeneralConfig() {
 }
 
 async function updateGeneral(key, value) {
-    await fetch('/api/config/general', {
+    const resp = await fetch('/api/config/general', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({config_key: key, config_value: value})
     });
+    const data = await resp.json();
     showToast('配置已更新（即时生效）', 'success');
+    // 如果是 API 相关配置，自动重载客户端
+    if (key === 'adspower_api_url' || key === 'adspower_api_key') {
+        showToast('检测到 API 配置变更，正在重载客户端...', 'info');
+        await reloadClient();
+    }
+}
+
+async function reloadClient() {
+    showToast('正在重载 AdsPower 客户端...', 'info');
+    const resp = await fetch('/api/config/reload_client', {method:'POST'});
+    const data = await resp.json();
+    if (data.code === 0) {
+        showToast(`客户端已重载: API ${data.data.api_ok ? '正常' : '异常'}`, data.data.api_ok ? 'success' : 'error');
+    } else {
+        showToast(data.msg, 'error');
+    }
 }
 
 async function deleteGeneral(id) {
@@ -125,65 +253,23 @@ async function deleteGeneral(id) {
     loadGeneralConfig();
 }
 
-async function showAddGeneralForm() {
-    const key = prompt('配置键名 (如 my_config_key):');
-    if (!key) return;
-    const value = prompt('配置值:');
-    if (value === null) return;
-    const remark = prompt('备注（可选）:') || '';
-    await fetch('/api/config/general', {
+async function submitGeneralForm(e) {
+    e.preventDefault();
+    const form = document.getElementById('general-form');
+    const fd = new FormData(form);
+    const body = Object.fromEntries(fd.entries());
+    const resp = await fetch('/api/config/general', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({config_key: key, config_value: value, remark: remark})
+        body: JSON.stringify(body)
     });
-    showToast('配置已添加', 'success');
-    loadGeneralConfig();
-}
-
-// ===== 代理配置 =====
-async function loadProxyConfig() {
-    const resp = await fetch('/api/config/proxy');
     const data = await resp.json();
-    const tbody = document.querySelector('#proxy-table tbody');
+    showToast(data.msg, data.code === 0 ? 'success' : 'error');
     if (data.code === 0) {
-        tbody.innerHTML = data.data.map(p => `
-            <tr>
-                <td>${p.name || '-'}</td>
-                <td>${p.proxy_soft} / ${p.proxy_type}</td>
-                <td>${p.proxy_host}:${p.proxy_port}</td>
-                <td><span class="badge ${p.enabled ? 'badge-success' : 'badge-error'}">${p.enabled ? '启用' : '禁用'}</span></td>
-                <td>${p.remark || '-'}</td>
-                <td>
-                    <button class="btn btn-sm btn-danger" onclick="deleteProxy(${p.id})">删除</button>
-                </td>
-            </tr>
-        `).join('') || '<tr><td colspan="6" class="text-center text-muted">暂无代理配置</td></tr>';
+        closeModal('general-modal');
+        form.reset();
+        loadGeneralConfig();
     }
-}
-
-async function showAddProxyForm() {
-    const host = prompt('代理主机 (如 1.2.3.4):');
-    if (!host) return;
-    const port = prompt('代理端口 (如 1080):');
-    if (!port) return;
-    const type = prompt('代理类型 (http/https/socks5):', 'socks5') || 'socks5';
-    const name = prompt('名称（可选）:') || '';
-    const user = prompt('用户名（可选）:') || '';
-    const pass = prompt('密码（可选）:') || '';
-    await fetch('/api/config/proxy', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({proxy_host: host, proxy_port: port, proxy_type: type, name: name, proxy_user: user, proxy_password: pass})
-    });
-    showToast('代理已添加', 'success');
-    loadProxyConfig();
-}
-
-async function deleteProxy(id) {
-    if (!confirm('确定删除?')) return;
-    await fetch('/api/config/proxy/' + id, {method: 'DELETE'});
-    showToast('已删除', 'success');
-    loadProxyConfig();
 }
 
 // ===== 指纹随机池 =====
@@ -194,33 +280,40 @@ async function loadFingerprintConfig() {
     if (data.code === 0) {
         tbody.innerHTML = data.data.map(f => `
             <tr>
-                <td><code>${f.param_name}</code></td>
+                <td><code>${escapeHtml(f.param_name)}</code></td>
                 <td><small>${escapeHtml(f.param_value)}</small></td>
                 <td>${f.weight}</td>
                 <td><span class="badge ${f.enabled ? 'badge-success' : 'badge-muted'}">${f.enabled ? '启用' : '禁用'}</span></td>
-                <td>${f.remark || '-'}</td>
+                <td>${escapeHtml(f.remark) || '-'}</td>
+                <td>${escapeHtml(f.operator) || '-'}</td>
                 <td>
                     <button class="btn btn-sm btn-secondary" onclick="toggleFingerprint(${f.id}, ${f.enabled ? 0 : 1})">${f.enabled ? '禁用' : '启用'}</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteFingerprint(${f.id})">删除</button>
                 </td>
             </tr>
-        `).join('') || '<tr><td colspan="6" class="text-center text-muted">暂无候选项（点击"初始化默认值"添加）</td></tr>';
+        `).join('') || '<tr><td colspan="7" class="text-center text-muted">暂无候选项（点击"初始化默认值"添加）</td></tr>';
     }
 }
 
-async function showAddFingerprintForm() {
-    const param = prompt('参数名 (screen_resolution/fonts/hardware_concurrency/device_memory/media_devices):');
-    if (!param) return;
-    const value = prompt('候选值:');
-    if (!value) return;
-    const weight = parseInt(prompt('权重 (1-10):', '1')) || 1;
-    await fetch('/api/config/fingerprint', {
+async function submitFingerprintForm(e) {
+    e.preventDefault();
+    const form = document.getElementById('fingerprint-form');
+    const fd = new FormData(form);
+    const body = Object.fromEntries(fd.entries());
+    body.enabled = 1;
+    body.weight = parseInt(body.weight) || 5;
+    const resp = await fetch('/api/config/fingerprint', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({param_name: param, param_value: value, weight: weight})
+        body: JSON.stringify(body)
     });
-    showToast('候选项已添加', 'success');
-    loadFingerprintConfig();
+    const data = await resp.json();
+    showToast(data.msg, data.code === 0 ? 'success' : 'error');
+    if (data.code === 0) {
+        closeModal('fingerprint-modal');
+        form.reset();
+        loadFingerprintConfig();
+    }
 }
 
 async function toggleFingerprint(id, enabled) {
@@ -257,27 +350,33 @@ async function loadPreservedConfig() {
     if (data.code === 0) {
         tbody.innerHTML = data.data.map(e => `
             <tr>
-                <td><code>${e.profile_id}</code></td>
-                <td>${e.env_name || '-'}</td>
-                <td>${e.remark || '-'}</td>
+                <td><code>${escapeHtml(e.profile_id)}</code></td>
+                <td>${escapeHtml(e.env_name) || '-'}</td>
+                <td>${escapeHtml(e.remark) || '-'}</td>
+                <td>${escapeHtml(e.operator) || '-'}</td>
                 <td><button class="btn btn-sm btn-danger" onclick="deletePreserved(${e.id})">移除</button></td>
             </tr>
-        `).join('') || '<tr><td colspan="4" class="text-center text-muted">暂无保留环境</td></tr>';
+        `).join('') || '<tr><td colspan="5" class="text-center text-muted">暂无保留环境</td></tr>';
     }
 }
 
-async function showAddPreservedForm() {
-    const pid = prompt('环境 profile_id:');
-    if (!pid) return;
-    const name = prompt('环境名称（可选）:') || '';
+async function submitPreservedForm(e) {
+    e.preventDefault();
+    const form = document.getElementById('preserved-form');
+    const fd = new FormData(form);
+    const body = Object.fromEntries(fd.entries());
     const resp = await fetch('/api/config/preserved', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({profile_id: pid, env_name: name})
+        body: JSON.stringify(body)
     });
     const data = await resp.json();
     showToast(data.msg, data.code === 0 ? 'success' : 'error');
-    loadPreservedConfig();
+    if (data.code === 0) {
+        closeModal('preserved-modal');
+        form.reset();
+        loadPreservedConfig();
+    }
 }
 
 async function deletePreserved(id) {

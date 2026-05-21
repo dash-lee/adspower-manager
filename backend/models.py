@@ -37,6 +37,8 @@ class GeneralConfig(db.Model):
     remark = db.Column(db.Text, nullable=False, default="")
     # 配置类别：general, proxy, fingerprint, environment
     category = db.Column(db.String(64), nullable=False, default="general")
+    # 操作人（记录谁添加/修改了此配置）
+    operator = db.Column(db.String(64), nullable=False, default="", comment="操作人")
     # 更新时间
     updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
@@ -77,6 +79,8 @@ class ProxyConfig(db.Model):
     enabled = db.Column(db.Integer, nullable=False, default=1)
     # 备注
     remark = db.Column(db.Text, nullable=False, default="")
+    # 操作人（记录谁添加/修改了此配置）
+    operator = db.Column(db.String(64), nullable=False, default="", comment="操作人")
     # 创建时间
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     # 更新时间
@@ -126,6 +130,8 @@ class FingerprintPool(db.Model):
     enabled = db.Column(db.Integer, nullable=False, default=1)
     # 备注说明
     remark = db.Column(db.Text, nullable=False, default="")
+    # 操作人（记录谁添加/修改了此配置）
+    operator = db.Column(db.String(64), nullable=False, default="", comment="操作人")
     # 创建时间
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
@@ -154,6 +160,8 @@ class PreservedEnv(db.Model):
     env_name = db.Column(db.String(256), nullable=False, default="")
     # 备注
     remark = db.Column(db.Text, nullable=False, default="")
+    # 操作人（记录谁添加/修改了此配置）
+    operator = db.Column(db.String(64), nullable=False, default="", comment="操作人")
     # 创建时间
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
@@ -271,3 +279,35 @@ class EnvRuntimeLog(db.Model):
 
     def __repr__(self):
         return f"<EnvRuntimeLog {self.profile_id} [{self.event_type}]>"
+
+
+class User(db.Model):
+    """
+    用户表
+    ====
+
+    存储后台管理系统的用户账号信息。
+    支持角色：admin（管理员，可管理用户）/ user（普通用户）
+
+    表名: users
+    """
+    __tablename__ = "users"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    # 用户名（登录用）
+    username = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    # 密码哈希（werkzeug.security）
+    password_hash = db.Column(db.String(256), nullable=False)
+    # 角色: admin / user
+    role = db.Column(db.String(16), nullable=False, default="user", index=True)
+    # 页面权限（JSON数组字符串，如 '["dashboard","proxy"]'，admin 忽略此字段拥有全部权限）
+    permissions = db.Column(db.Text, nullable=False, default="[]", comment="页面权限 JSON数组")
+    # 是否启用 (1=启用, 0=禁用)
+    is_active = db.Column(db.Integer, nullable=False, default=1)
+    # 创建时间
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    # 更新时间
+    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    def __repr__(self):
+        return f"<User {self.username} [{self.role}]>"

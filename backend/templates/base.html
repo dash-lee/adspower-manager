@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}AdsPower Manager{% endblock %}</title>
+    <title>{% block title %}Ads Manager{% endblock %}</title>
     <link rel="stylesheet" href="/static/css/style.css">
     {% block extra_css %}{% endblock %}
 </head>
@@ -11,26 +11,50 @@
     <!-- 侧边导航栏 -->
     <nav class="sidebar">
         <div class="sidebar-header">
-            <h2>🔧 AdsPower Manager</h2>
+            <h2>🔧 Ads Manager</h2>
             <small>环境管理后台</small>
         </div>
         <ul class="nav-menu">
+            {% if session.get('role') == 'admin' or 'dashboard' in session.get('permissions', []) %}
             <li><a href="/dashboard" class="nav-link {% if request.path == '/dashboard' %}active{% endif %}">
-                📊 仪表盘
+                📊 总览
             </a></li>
+            {% endif %}
+            {% if session.get('role') == 'admin' or 'environments' in session.get('permissions', []) %}
             <li><a href="/environments" class="nav-link {% if request.path == '/environments' %}active{% endif %}">
                 🌐 环境管理
             </a></li>
+            {% endif %}
+            {% if session.get('role') == 'admin' or 'proxy' in session.get('permissions', []) %}
+            <li><a href="/proxy" class="nav-link {% if request.path == '/proxy' %}active{% endif %}">
+                🔌 代理管理
+            </a></li>
+            {% endif %}
+            {% if session.get('role') == 'admin' or 'config' in session.get('permissions', []) %}
             <li><a href="/config" class="nav-link {% if request.path == '/config' %}active{% endif %}">
                 ⚙️ 配置管理
             </a></li>
+            {% endif %}
+            {% if session.get('role') == 'admin' or 'logs' in session.get('permissions', []) %}
             <li><a href="/logs" class="nav-link {% if request.path == '/logs' %}active{% endif %}">
                 📋 日志查看
             </a></li>
+            {% endif %}
+            {% if session.get('role') == 'admin' %}
+            <li><a href="/users" class="nav-link {% if request.path == '/users' %}active{% endif %}">
+                👥 权限配置
+            </a></li>
+            {% endif %}
         </ul>
-        <div class="sidebar-footer" id="api-status">
-            <span class="status-indicator" id="status-dot">●</span>
-            <span id="status-text">检查中...</span>
+        <div class="sidebar-footer">
+            <div id="api-status" style="margin-bottom:8px;">
+                <span class="status-indicator" id="status-dot">●</span>
+                <span id="status-text">检查中...</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;">
+                <span>👤 {{ session.get('username', 'unknown') }}</span>
+                <a href="#" onclick="doLogout()" style="color:var(--text-muted);text-decoration:none;">登出</a>
+            </div>
         </div>
     </nav>
 
@@ -43,6 +67,19 @@
     <div id="toast-container"></div>
 
     <script src="/static/js/app.js"></script>
+    <script>
+    async function doLogout() {
+        await fetch('/auth/logout', {method:'POST'});
+        window.location.href = '/auth/login';
+    }
+    async function checkAuth() {
+        const resp = await fetch('/auth/me');
+        if (resp.status === 401) {
+            window.location.href = '/auth/login';
+        }
+    }
+    setInterval(checkAuth, 60000);
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

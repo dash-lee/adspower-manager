@@ -8,9 +8,11 @@
 3. 定时同步环境列表
 
 所有调度配置通过数据库的 general_config 表即时生效。
+每次执行时动态读取配置，无需重启。
 """
 
 import datetime
+import time
 from loguru import logger
 from apscheduler.schedulers.background import BackgroundScheduler
 from backend.models import db, GeneralConfig, TaskQueue
@@ -21,6 +23,11 @@ from backend.services.env_manager import EnvManager
 class TaskScheduler:
     """
     任务调度器。
+
+    关键设计：
+    - APScheduler 以固定频率触发（每秒一次）
+    - 每次触发时从数据库读取间隔配置，决定是否真正执行
+    - 这样配置修改后无需重启即可生效
 
     Usage:
         scheduler = TaskScheduler(adspower_client)
@@ -38,28 +45,70 @@ class TaskScheduler:
         self.client = client
         self.env_manager = EnvManager(client)
         self._scheduler = BackgroundScheduler(
-            timezone="Asia/Shanghai",  # 默认时区
+            timezone="Asia/Shanghai",
             job_defaults={
-                "coalesce": True,       # 合并错过的任务
-                "max_instances": 1,     # 同时只运行一个实例
+                "coalesce": True,
+                "max_instances": 1,
             },
         )
+        # 上次执行时间（用于动态间隔控制）
+        self._last_task_run = 0.0
+        self._last_check_run = 0.0
 
     def _get_config_int(self, key: str, default: int) -> int:
-        """从数据库读取配置（整数）。"""
+        """从数据库读取配置（整数），即时生效。"""
         try:
             config = GeneralConfig.query.filter_by(config_key=key).first()
-            if config:
+            if config and config.config_value:
                 return int(config.config_value)
         except (ValueError, TypeError):
             pass
         return default
 
+    def _get_config_str(self, key: str, default: str) -> str:
+        """从数据库读取配置（字符串），即时生效。"""
+        try:
+            config = GeneralConfig.query.filter_by(config_key=key).first()
+            if config and config.config_value:
+                return config.config_value
+        except Exception:
+            pass
+        return default
+
+    def _should_run_task_queue(self) -> bool:
+        """
+        检查是否应该执行任务队列处理。
+        根据数据库中的 task_poll_interval 配置决定。
+        """
+        interval = self._get_config_int("task_poll_interval", 30)
+        now = time.time()
+        if now - self._last_task_run >= interval:
+            self._last_task_run = now
+            return True
+        return False
+
+    def _should_run_auto_check(self) -> bool:
+        """
+        检查是否应该执行自动状态检查。
+        根据数据库中的 auto_check_interval 配置决定。
+        """
+        interval = self._get_config_int("auto_check_interval", 3600)
+        now = time.time()
+        if now - self._last_check_run >= interval:
+            self._last_check_run = now
+            return True
+        return False
+
     def _process_task_queue(self):
         """
         定时执行：处理任务队列中的待处理任务。
+        会先检查动态间隔。
         """
-        logger.info("===== 定时任务：处理任务队列 =====")
+        if not self._should_run_task_queue():
+            return
+        # 读取当前 max_env_limit 配置
+        limit = self._get_config_int("max_env_limit", 100)
+        logger.info(f"===== 定时任务：处理任务队列（上限={limit}）=====")
         try:
             count = self.env_manager.process_pending_tasks()
             logger.info(f"任务队列处理完成：{count} 个任务")
@@ -69,7 +118,10 @@ class TaskScheduler:
     def _auto_check_status(self):
         """
         定时执行：检查 AdsPower 状态和环境同步。
+        会先检查动态间隔。
         """
+        if not self._should_run_auto_check():
+            return
         logger.info("===== 定时任务：自动状态检查 =====")
         try:
             result = self.env_manager.init_check()
@@ -85,12 +137,14 @@ class TaskScheduler:
 
     def _cleanup_old_logs(self):
         """
-        定时执行：清理旧日志（保留最近7天）。
+        定时执行：清理旧日志。
+        根据 log_retention_days 配置决定保留天数。
         """
-        logger.info("===== 定时任务：清理旧日志 =====")
+        retention_days = self._get_config_int("log_retention_days", 7)
+        logger.info(f"===== 定时任务：清理旧日志（保留{retention_days}天）=====")
         try:
             from backend.models import OperationLog, EnvRuntimeLog
-            cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=7)
+            cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=retention_days)
 
             deleted_ops = OperationLog.query.filter(
                 OperationLog.created_at < cutoff
@@ -108,26 +162,23 @@ class TaskScheduler:
     def start(self):
         """
         启动调度器，注册所有定时任务。
-
-        从数据库读取间隔配置（即时生效意味着每次执行时重新读取）。
+        所有任务以固定频率触发，内部通过动态间隔控制。
         """
-        # 任务队列处理：默认每 30 秒一次
-        task_interval = 30  # 默认值，实际执行时动态读取
+        # 任务队列处理：固定每秒检查一次，内部按配置间隔跳过
         self._scheduler.add_job(
             self._process_task_queue,
             trigger="interval",
-            seconds=task_interval,
+            seconds=1,  # 高频检查，实际间隔由 _should_run_task_queue 控制
             id="process_tasks",
             name="处理任务队列",
-            # 使用动态间隔：每次执行前从数据库读取最新配置
             next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=5),
         )
 
-        # 自动状态检查：默认每小时一次
+        # 自动状态检查：固定每60秒检查一次，内部按配置间隔跳过
         self._scheduler.add_job(
             self._auto_check_status,
             trigger="interval",
-            hours=1,
+            seconds=60,
             id="auto_check",
             name="自动状态检查",
             next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=30),
@@ -144,10 +195,17 @@ class TaskScheduler:
         )
 
         self._scheduler.start()
+
+        # 读取当前配置用于日志
+        task_int = self._get_config_int("task_poll_interval", 30)
+        check_int = self._get_config_int("auto_check_interval", 3600)
+        log_days = self._get_config_int("log_retention_days", 7)
+
         logger.info("===== 定时任务调度器已启动 =====")
-        logger.info(f"  - 任务队列处理: 每 {task_interval} 秒")
-        logger.info(f"  - 自动状态检查: 每小时")
-        logger.info(f"  - 日志清理: 每天 03:00")
+        logger.info(f"  - 任务队列处理: 每 {task_int} 秒（配置键: task_poll_interval）")
+        logger.info(f"  - 自动状态检查: 每 {check_int} 秒（配置键: auto_check_interval）")
+        logger.info(f"  - 日志清理: 每天 03:00，保留 {log_days} 天（配置键: log_retention_days）")
+        logger.info(f"  ℹ️  以上间隔可通过「配置管理 → 通用配置」即时修改，无需重启")
 
     def stop(self):
         """

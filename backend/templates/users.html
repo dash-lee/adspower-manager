@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}权限配置 - Ads Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>👥 权限配置</h1>
+    <p class="text-muted">管理用户账号和页面访问权限（仅管理员可访问）</p>
+</div>
+
+<div class="action-bar">
+    <button class="btn btn-primary" onclick="openCreateModal()">➕ 创建子账号</button>
+    <button class="btn btn-secondary" onclick="loadUsers()">🔄 刷新列表</button>
+</div>
+
+<div class="card">
+    <h3>用户列表</h3>
+    <table class="data-table" id="users-table">
+        <thead>
+            <tr><th>ID</th><th>用户名</th><th>角色</th><th>页面权限</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
+        </thead>
+        <tbody><tr><td colspan="7" class="text-center text-muted">加载中...</td></tr></tbody>
+    </table>
+</div>
+
+<!-- 创建子账号弹窗（含权限选择） -->
+<div class="modal" id="create-modal">
+    <div class="modal-content" style="max-width:550px;">
+        <span class="modal-close" onclick="closeModal('create-modal')">&times;</span>
+        <h2>创建子账号</h2>
+        <form id="create-form" onsubmit="createUser(event)">
+            <div class="form-group">
+                <label>用户名 <span style="color:var(--error)">*</span></label>
+                <input type="text" name="username" placeholder="子账号登录名" required minlength="2">
+            </div>
+            <div class="form-group">
+                <label>密码 <span style="color:var(--error)">*</span></label>
+                <input type="password" name="password" placeholder="至少4个字符" required minlength="4">
+            </div>
+            <div class="form-group">
+                <label>页面权限 <span style="color:var(--error)">*</span>（可访问的页面）</label>
+                <div id="create-perms" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;"></div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('create-modal')">取消</button>
+                <button type="submit" class="btn btn-primary">💾 创建</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 编辑用户弹窗（含权限编辑） -->
+<div class="modal" id="edit-modal">
+    <div class="modal-content" style="max-width:550px;">
+        <span class="modal-close" onclick="closeModal('edit-modal')">&times;</span>
+        <h2>编辑用户</h2>
+        <form id="edit-form" onsubmit="updateUser(event)">
+            <input type="hidden" name="user_id" value="">
+            <div class="form-group">
+                <label>用户名</label>
+                <input type="text" id="edit-username" disabled style="opacity:0.6;">
+            </div>
+            <div class="form-group">
+                <label>新密码（留空不修改）</label>
+                <input type="password" name="password" placeholder="留空表示不修改密码" minlength="4">
+            </div>
+            <div class="form-group">
+                <label>角色</label>
+                <select name="role">
+                    <option value="user">user（普通用户）</option>
+                    <option value="admin">admin（管理员）</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>状态</label>
+                <select name="is_active">
+                    <option value="1">启用</option>
+                    <option value="0">禁用</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>页面权限（可访问的页面）</label>
+                <div id="edit-perms" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;"></div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('edit-modal')">取消</button>
+                <button type="submit" class="btn btn-primary">💾 保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 所有可选权限
+const ALL_PERMS = [
+    {key:'dashboard',    label:'📊 总览'},
+    {key:'environments', label:'🌐 环境管理'},
+    {key:'proxy',        label:'🔌 代理管理'},
+    {key:'config',       label:'⚙️ 配置管理'},
+    {key:'logs',         label:'📋 日志查看'},
+];
+
+function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+// 渲染权限复选框
+function renderPermCheckboxes(containerId, selectedPerms) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = ALL_PERMS.map(p => `
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding:4px 0;">
+            <input type="checkbox" name="perm_${p.key}" value="${p.key}"
+                   ${selectedPerms.includes(p.key) ? 'checked' : ''}>
+            ${p.label}
+        </label>
+    `).join('');
+}
+
+// 读取被选中的权限
+function getSelectedPerms(form) {
+    const perms = [];
+    const inputs = form.querySelectorAll('[name^="perm_"]');
+    inputs.forEach(cb => { if (cb.checked) perms.push(cb.value); });
+    return perms;
+}
+
+// ===== 加载用户列表 =====
+async function loadUsers() {
+    const resp = await fetch('/auth/users');
+    const data = await resp.json();
+    const tbody = document.querySelector('#users-table tbody');
+    if (data.code === 0) {
+        tbody.innerHTML = data.data.map(u => {
+            const permLabels = (u.permissions || []).map(k => {
+                const p = ALL_PERMS.find(x => x.key === k);
+                return p ? p.label.split(' ')[0] : k;
+            }).join(' ') || '<span style="color:var(--text-muted)">无权限</span>';
+            return `
+            <tr>
+                <td>${u.id}</td>
+                <td><strong>${escapeHtml(u.username)}</strong> ${u.role === 'admin' ? '<span class="badge badge-info">管理员</span>' : ''}</td>
+                <td>${u.role === 'admin' ? '👑 管理员（全部权限）' : '👤 普通用户'}</td>
+                <td style="font-size:12px;">${permLabels}</td>
+                <td><span class="badge ${u.is_active ? 'badge-success' : 'badge-error'}">${u.is_active ? '启用' : '禁用'}</span></td>
+                <td><small>${formatTime(u.created_at)}</small></td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick='openEditModal(${JSON.stringify(u)})'>✏️</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id}, '${escapeHtml(u.username)}')">🗑️</button>
+                </td>
+            </tr>
+            `;
+        }).join('');
+    }
+}
+
+// ===== 创建子账号 =====
+function openCreateModal() {
+    document.getElementById('create-form').reset();
+    renderPermCheckboxes('create-perms', []);
+    openModal('create-modal');
+}
+
+async function createUser(e) {
+    e.preventDefault();
+    const form = e.target;
+    const fd = new FormData(form);
+    const perms = getSelectedPerms(form);
+    if (perms.length === 0) {
+        showToast('请至少选择一个页面权限', 'error');
+        return;
+    }
+    const resp = await fetch('/auth/users', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username: fd.get('username'), password: fd.get('password'), permissions: perms})
+    });
+    const data = await resp.json();
+    showToast(data.msg, data.code === 0 ? 'success' : 'error');
+    if (data.code === 0) { closeModal('create-modal'); loadUsers(); }
+}
+
+// ===== 编辑用户 =====
+function openEditModal(user) {
+    const form = document.getElementById('edit-form');
+    form.user_id.value = user.id;
+    document.getElementById('edit-username').value = user.username;
+    form.role.value = user.role;
+    form.is_active.value = user.is_active;
+    form.password.value = '';
+    renderPermCheckboxes('edit-perms', user.permissions || []);
+    openModal('edit-modal');
+}
+
+async function updateUser(e) {
+    e.preventDefault();
+    const form = e.target;
+    const fd = new FormData(form);
+    const body = {
+        role: fd.get('role'),
+        is_active: parseInt(fd.get('is_active')),
+        permissions: getSelectedPerms(form),
+    };
+    if (fd.get('password')) body.password = fd.get('password');
+    const resp = await fetch('/auth/users/' + fd.get('user_id'), {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    });
+    const data = await resp.json();
+    showToast(data.msg, data.code === 0 ? 'success' : 'error');
+    if (data.code === 0) { closeModal('edit-modal'); loadUsers(); }
+}
+
+// ===== 删除 =====
+async function deleteUser(id, username) {
+    if (!confirm(`确定删除用户「${username}」？`)) return;
+    const resp = await fetch('/auth/users/' + id, {method: 'DELETE'});
+    const data = await resp.json();
+    showToast(data.msg, data.code === 0 ? 'success' : 'error');
+    loadUsers();
+}
+
+document.addEventListener('DOMContentLoaded', loadUsers);
+</script>
+{% endblock %}
