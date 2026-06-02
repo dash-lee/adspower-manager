@@ -143,21 +143,38 @@ class AdsPowerClient:
     # 1. 接口状态检查
     # ============================================================
 
-    def check_status(self) -> bool:
+    def check_status(self, verify_auth: bool = True) -> bool:
         """
         检查 AdsPower API 接口是否可用。
 
         GET /status
 
+        Args:
+            verify_auth: 是否同时验证 API Key 有效（默认 True）。
+                         如果为 True，会额外调用一个需要鉴权的接口来确认 Key 有效。
+
         Returns:
-            bool: True 表示接口正常，False 表示不可用
+            bool: True 表示接口正常且 API Key 有效，False 表示不可用或 Key 无效
         """
+        # 1. 基本连通性检查（/status 不需要 API Key）
         resp = self._get("/status")
-        if self._is_success(resp):
-            logger.info("AdsPower API 接口状态正常")
-            return True
-        logger.error(f"AdsPower API 接口不可用: {resp.get('msg', '未知错误')}")
-        return False
+        if not self._is_success(resp):
+            logger.error(f"AdsPower API 接口不可用: {resp.get('msg', '未知错误')}")
+            return False
+
+        # 2. 如果配置了 API Key，用需要鉴权的接口验证 Key 是否有效
+        if verify_auth and self.api_key:
+            auth_check = self._post("/api/v2/browser-profile/list", {"page": 1, "limit": 1})
+            if not self._is_success(auth_check):
+                err_msg = auth_check.get("msg", "未知错误")
+                logger.error(f"AdsPower API Key 验证失败: {err_msg}")
+                logger.error("请检查配置中的 adspower_api_key 是否正确")
+                return False
+            logger.info("AdsPower API 接口正常，API Key 验证通过")
+        else:
+            logger.info("AdsPower API 接口状态正常（未验证 API Key）")
+
+        return True
 
     # ============================================================
     # 2. 环境列表与查询
@@ -308,9 +325,9 @@ class AdsPowerClient:
             body["user_proxy_config"] = user_proxy_config
         # 注意：proxy_id 和 user_proxy_config 必须提供一个
         if domain_name:
-            body["domain_name"] = domain_name
+            body["platform"] = domain_name
         if open_urls:
-            body["open_urls"] = open_urls
+            body["tabs"] = open_urls
         if username:
             body["username"] = username
         if password:
@@ -433,6 +450,11 @@ class AdsPowerClient:
         last_opened_tabs: int = 1,
         proxy_detection: int = 1,
         launch_args: Optional[list] = None,
+        password_filling: int = 0,
+        password_saving: int = 0,
+        cdp_mask: int = 1,
+        delete_cache: int = 0,
+        device_scale: Optional[str] = None,
     ) -> dict:
         """
         启动浏览器环境（v2 接口）。
@@ -445,6 +467,11 @@ class AdsPowerClient:
             last_opened_tabs: 是否打开上次标签: 1=是, 0=否
             proxy_detection:  是否打开代理检测页: 1=是, 0=否
             launch_args:      浏览器启动参数列表
+            password_filling: 1=启用账密填充（仅首次生效）, 0=禁用
+            password_saving:  1=允许保存密码（仅Chrome）, 0=禁用
+            cdp_mask:         1=屏蔽CDP检测（iOS/Android强制）, 0=不屏蔽
+            delete_cache:     1=关闭后清除缓存, 0=不清除
+            device_scale:     手机缩放比 0.1~2（需Chrome128+）
 
         Returns:
             dict: {
@@ -461,9 +488,15 @@ class AdsPowerClient:
             "headless": str(headless),
             "last_opened_tabs": str(last_opened_tabs),
             "proxy_detection": str(proxy_detection),
+            "password_filling": str(password_filling),
+            "password_saving": str(password_saving),
+            "cdp_mask": str(cdp_mask),
+            "delete_cache": str(delete_cache),
         }
         if launch_args:
             body["launch_args"] = launch_args
+        if device_scale is not None:
+            body["device_scale"] = str(device_scale)
 
         return self._post("/api/v2/browser-profile/start", body)
 

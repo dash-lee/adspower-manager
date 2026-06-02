@@ -1,0 +1,17 @@
+{
+    "display_name": "创建环境",
+    "description": "在 AdsPower 中创建新的浏览器环境",
+    "version": "1.0",
+    "category": "standard",
+    "params": [
+        {"name": "env_name", "label": "环境名称", "type": "string", "required": false, "default": "Auto", "placeholder": "自动生成..."},
+        {"name": "count", "label": "创建数量", "type": "number", "required": true, "default": 1, "description": "一次创建多个环境"},
+        {"name": "group_id", "label": "分组ID", "type": "string", "required": false, "default": "0", "placeholder": "0=默认分组"},
+        {"name": "proxy_id", "label": "代理ID（可选）", "type": "string", "required": false, "default": "", "placeholder": "留空自动选择"},
+        {"name": "open_url", "label": "初始URL（可选）", "type": "string", "required": false, "default": "", "placeholder": "https://..."},
+        {"name": "domain_name", "label": "平台域名（可选）", "type": "string", "required": false, "default": "", "placeholder": "如 facebook.com"},
+        {"name": "username", "label": "账号（可选）", "type": "string", "required": false, "default": ""},
+        {"name": "password", "label": "密码（可选）", "type": "string", "required": false, "default": ""},
+        {"name": "remark", "label": "备注（可选）", "type": "string", "required": false, "default": ""}
+    ]
+}

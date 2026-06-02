@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}执行状态 - Ads Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>📈 执行状态</h1>
+    <p class="text-muted">组合脚本执行监测 — 每个线程对应一条记录</p>
+</div>
+
+<div class="action-bar">
+    <button class="btn btn-secondary" onclick="loadThreads()">🔄 刷新</button>
+</div>
+
+<!-- 执行线程列表 -->
+<div class="card">
+    <h3>线程列表 <span id="thread-count" class="text-muted" style="font-weight:normal;font-size:14px;"></span></h3>
+    <div style="overflow-x:auto;">
+        <table class="data-table" id="thread-table">
+            <thead>
+                <tr>
+                    <th>批次ID</th>
+                    <th>脚本名称</th>
+                    <th>环境ID</th>
+                    <th>环境名称</th>
+                    <th>状态</th>
+                    <th>开始时间</th>
+                    <th>完成时间</th>
+                    <th>错误信息</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td colspan="9" class="text-center text-muted">加载中...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <!-- 分页 -->
+    <div id="pagination" style="display:flex;justify-content:center;gap:8px;margin-top:12px;flex-wrap:wrap;"></div>
+</div>
+
+<!-- 执行日志弹窗 -->
+<div class="modal" id="log-modal">
+    <div class="modal-content" style="max-width:750px;max-height:85vh;">
+        <span class="modal-close" onclick="closeLogModal()">&times;</span>
+        <h2 id="log-modal-title">📋 执行日志</h2>
+        <div style="margin-bottom:12px;font-size:13px;color:var(--text-muted);">
+            执行ID: <code id="log-exec-id"></code>
+            环境ID: <code id="log-profile-id" style="margin-left:8px;"></code>
+        </div>
+        <div id="log-container" style="max-height:55vh;overflow-y:auto;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;padding:12px;font-family:monospace;font-size:13px;line-height:1.7;">
+            <p class="text-muted" style="text-align:center;">加载中...</p>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+            <button class="btn btn-secondary" onclick="closeLogModal()">关闭</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentPage = 1;
+const PAGE_SIZE = 20;
+
+// ===== 加载线程列表（仅组合脚本） =====
+async function loadThreads(page) {
+    if (page !== undefined) currentPage = page;
+
+    try {
+        // 获取仅 combo 脚本的执行批次
+        const resp = await fetch(`/api/scripts/executions?page=${currentPage}&limit=${PAGE_SIZE}&type=combo`);
+        const data = await resp.json();
+        if (data.code !== 0) {
+            showToast('加载失败: ' + data.msg, 'error');
+            return;
+        }
+
+        const result = data.data || {};
+        const batches = result.batches || [];
+        const total = result.total || 0;
+
+        // 获取每个批次的线程详情
+        const allThreads = [];
+        for (const batch of batches) {
+            const threadResp = await fetch(`/api/scripts/executions/${batch.execution_id}/status`);
+            const threadData = await threadResp.json();
+            if (threadData.code === 0 && threadData.data) {
+                allThreads.push(...threadData.data);
+            }
+        }
+
+        renderThreadTable(allThreads);
+        document.getElementById('thread-count').textContent = `(共 ${total} 个批次，${allThreads.length} 线程)`;
+        renderPagination(total);
+    } catch(e) {
+        showToast('加载失败: ' + e.message, 'error');
+    }
+}
+
+function renderThreadTable(threads) {
+    const tbody = document.querySelector('#thread-table tbody');
+    if (threads.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无组合脚本执行记录</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = threads.map(t => {
+        let statusHtml = '';
+        if (t.status === 'completed') statusHtml = '<span class="badge badge-success">✅ 完成</span>';
+        else if (t.status === 'failed') statusHtml = '<span class="badge badge-error">❌ 失败</span>';
+        else if (t.status === 'running') statusHtml = '<span class="badge badge-warning">⏳ 运行中</span>';
+        else statusHtml = '<span class="badge badge-info">⏸ 待处理</span>';
+
+        return `
+            <tr>
+                <td><code>${escapeHtml(t.execution_id)}</code></td>
+                <td>${escapeHtml(t.script_name)}</td>
+                <td><code>${escapeHtml(t.profile_id || '-')}</code></td>
+                <td>${escapeHtml(t.env_name || '-')}</td>
+                <td>${statusHtml}</td>
+                <td style="font-size:12px;">${formatTime(t.started_at)}</td>
+                <td style="font-size:12px;">${formatTime(t.completed_at)}</td>
+                <td style="color:var(--error);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(t.error_message || '')}">
+                    ${escapeHtml(t.error_message || '-')}
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick="viewThreadLog('${escapeHtml(t.execution_id)}', '${escapeHtml(t.profile_id || '')}')">📋 日志</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function renderPagination(total) {
+    const container = document.getElementById('pagination');
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+    if (totalPages <= 1) { container.innerHTML = ''; return; }
+
+    let html = '';
+    if (currentPage > 1) {
+        html += `<button class="btn btn-sm btn-secondary" onclick="loadThreads(1)">首页</button>`;
+        html += `<button class="btn btn-sm btn-secondary" onclick="loadThreads(${currentPage - 1})">上一页</button>`;
+    }
+    html += `<span style="padding:6px 12px;font-size:13px;color:var(--text-muted);">第 ${currentPage}/${totalPages} 页</span>`;
+    if (currentPage < totalPages) {
+        html += `<button class="btn btn-sm btn-secondary" onclick="loadThreads(${currentPage + 1})">下一页</button>`;
+        html += `<button class="btn btn-sm btn-secondary" onclick="loadThreads(${totalPages})">末页</button>`;
+    }
+    container.innerHTML = html;
+}
+
+// ===== 查看线程日志 =====
+async function viewThreadLog(executionId, profileId) {
+    document.getElementById('log-modal-title').textContent = '📋 执行日志';
+    document.getElementById('log-exec-id').textContent = executionId;
+    document.getElementById('log-profile-id').textContent = profileId || '全部';
+    document.getElementById('log-container').innerHTML = '<p class="text-muted" style="text-align:center;">加载中...</p>';
+    document.getElementById('log-modal').style.display = 'flex';
+
+    try {
+        const resp = await fetch(`/api/scripts/log/${executionId}`);
+        const data = await resp.json();
+        if (data.code !== 0) {
+            document.getElementById('log-container').innerHTML = `<p class="text-muted">❌ ${data.msg}</p>`;
+            return;
+        }
+
+        let logs = data.data || [];
+
+        // 如果指定了 profileId，筛选该环境的日志
+        if (profileId) {
+            logs = logs.filter(l => l.profile_id === profileId || !l.profile_id);
+        }
+
+        if (logs.length === 0) {
+            document.getElementById('log-container').innerHTML = '<p class="text-muted" style="text-align:center;">暂无日志</p>';
+            return;
+        }
+
+        document.getElementById('log-container').innerHTML = logs.map(l => {
+            let icon = 'ℹ️';
+            if (l.step_type === 'success') icon = '✅';
+            else if (l.step_type === 'error') icon = '❌';
+            else if (l.step_type === 'warning') icon = '⚠️';
+            else if (l.step_type === 'api_call') icon = '🔗';
+            else if (l.step_type === 'start') icon = '▶️';
+            else if (l.step_type === 'end') icon = '🏁';
+
+            const time = l.created_at ? l.created_at.substr(11, 8) : '';
+            const profileTag = l.profile_id ? ` <span style="color:var(--accent);">[${escapeHtml(l.profile_id.substr(0,12))}]</span>` : '';
+            return `<div style="padding:2px 0;">[${time}] ${icon}${profileTag} ${escapeHtml(l.message)}</div>`;
+        }).join('');
+
+        const container = document.getElementById('log-container');
+        container.scrollTop = container.scrollHeight;
+    } catch(e) {
+        document.getElementById('log-container').innerHTML = `<p class="text-muted">❌ 加载失败: ${e.message}</p>`;
+    }
+}
+
+function closeLogModal() {
+    document.getElementById('log-modal').style.display = 'none';
+}
+
+document.addEventListener('DOMContentLoaded', () => loadThreads(1));
+</script>
+{% endblock %}

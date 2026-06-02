@@ -24,8 +24,11 @@ ALL_PERMISSIONS = [
     {"key": "dashboard",    "label": "总览",       "icon": "📊"},
     {"key": "environments", "label": "环境管理",    "icon": "🌐"},
     {"key": "proxy",        "label": "代理管理",    "icon": "🔌"},
+    {"key": "videos",       "label": "视频管理",    "icon": "🎬"},
     {"key": "config",       "label": "配置管理",    "icon": "⚙️"},
     {"key": "logs",         "label": "日志查看",    "icon": "📋"},
+    {"key": "scripts",      "label": "脚本管理",    "icon": "🤖"},
+    {"key": "executions",   "label": "执行状态",    "icon": "📈"},
     {"key": "users",        "label": "权限配置",    "icon": "👥"},
 ]
 
@@ -303,6 +306,9 @@ def delete_user(user_id):
 
     if user.id == session.get("user_id"):
         return jsonify({"code": -1, "msg": "不能删除自己的账号"})
+
+    if user.role == "admin":
+        return jsonify({"code": -1, "msg": "不能删除管理员账号"})
 
     username = user.username
     db.session.delete(user)

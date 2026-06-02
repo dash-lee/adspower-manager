@@ -11,6 +11,7 @@
 <div class="tabs">
     <button class="tab-btn active" onclick="switchLogTab('operation')">操作日志</button>
     <button class="tab-btn" onclick="switchLogTab('environment')">环境运行日志</button>
+    <button class="tab-btn" onclick="switchLogTab('admin')">👤 管理员日志</button>
 </div>
 
 <!-- 过滤栏 -->
@@ -75,6 +76,32 @@
     </div>
 </div>
 
+<!-- 管理员操作日志 -->
+<div class="tab-content" id="tab-admin">
+    <div class="filter-bar" id="admin-filter-bar">
+        <input type="text" id="admin-username-filter" placeholder="按用户名过滤..." onkeyup="if(event.key==='Enter')loadAdminLogs()">
+        <input type="text" id="admin-keyword-filter" placeholder="关键词搜索..." onkeyup="if(event.key==='Enter')loadAdminLogs()">
+        <button class="btn btn-sm btn-secondary" onclick="loadAdminLogs()">🔍 搜索</button>
+    </div>
+    <div class="card">
+        <table class="data-table" id="admin-log-table">
+            <thead>
+                <tr>
+                    <th>时间</th>
+                    <th>操作用户</th>
+                    <th>操作描述</th>
+                    <th>操作对象</th>
+                    <th>IP地址</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td colspan="5" class="text-center text-muted">加载中...</td></tr>
+            </tbody>
+        </table>
+        <div class="pagination" id="admin-pagination"></div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -88,14 +115,16 @@ function switchLogTab(tab) {
     event.target.classList.add('active');
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     document.getElementById('tab-' + tab).classList.add('active');
-    // 过滤栏仅在操作日志时显示
-    document.querySelector('.filter-bar').style.display = tab === 'operation' ? 'flex' : 'none';
+    // 过滤栏仅在操作日志和管理员日志时显示
+    document.querySelector('.filter-bar').style.display = (tab === 'operation') ? 'flex' : 'none';
+    document.getElementById('admin-filter-bar').style.display = (tab === 'admin') ? 'flex' : 'none';
     loadCurrentLogs();
 }
 
 async function loadCurrentLogs() {
     if (currentLogTab === 'operation') loadOperationLogs();
-    else loadEnvRuntimeLogs();
+    else if (currentLogTab === 'environment') loadEnvRuntimeLogs();
+    else if (currentLogTab === 'admin') loadAdminLogs();
 }
 
 async function loadOperationLogs(page = 1) {
@@ -146,6 +175,35 @@ async function loadEnvRuntimeLogs(page = 1) {
     }
 }
 
+// ===== 管理员操作日志 =====
+let adminPage = 1;
+
+async function loadAdminLogs(page = 1) {
+    adminPage = page;
+    const username = document.getElementById('admin-username-filter').value;
+    const keyword = document.getElementById('admin-keyword-filter').value;
+
+    let url = `/api/logs/admin?page=${page}&limit=${limit}`;
+    if (username) url += `&username=${encodeURIComponent(username)}`;
+    if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
+
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.code === 0) {
+        const tbody = document.querySelector('#admin-log-table tbody');
+        tbody.innerHTML = data.data.list.map(l => `
+            <tr>
+                <td>${formatTime(l.created_at)}</td>
+                <td><strong>${escapeHtml(l.operator_username)}</strong></td>
+                <td>${escapeHtml(l.action)}</td>
+                <td><code>${escapeHtml(l.target) || '-'}</code></td>
+                <td><small>${escapeHtml(l.ip_address) || '-'}</small></td>
+            </tr>
+        `).join('') || '<tr><td colspan="5" class="text-center text-muted">暂无管理员操作记录</td></tr>';
+        renderPagination('admin', data.data.total, page);
+    }
+}
+
 function renderPagination(prefix, total, current) {
     const totalPages = Math.ceil(total / limit);
     const container = document.getElementById(prefix + '-pagination');
@@ -154,7 +212,7 @@ function renderPagination(prefix, total, current) {
     let html = `<span>共 ${total} 条 / ${totalPages} 页 </span>`;
     for (let i = 1; i <= totalPages; i++) {
         html += `<button class="btn btn-sm ${i === current ? 'btn-primary' : 'btn-secondary'}" 
-                 onclick="${prefix === 'op' ? 'loadOperationLogs' : 'loadEnvRuntimeLogs'}(${i})">${i}</button>`;
+                 onclick="${prefix === 'op' ? 'loadOperationLogs' : (prefix === 'env' ? 'loadEnvRuntimeLogs' : 'loadAdminLogs')}(${i})">${i}</button>`;
     }
     container.innerHTML = html;
 }

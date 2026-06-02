@@ -11,8 +11,8 @@ GET /api/logs/stats         - 日志统计概览
 """
 
 import json
-from flask import Blueprint, request, jsonify
-from backend.models import db, OperationLog, EnvRuntimeLog
+from flask import Blueprint, request, jsonify, session
+from backend.models import db, OperationLog, EnvRuntimeLog, AdminLog
 
 log_bp = Blueprint("log", __name__, url_prefix="/api/logs")
 
@@ -176,6 +176,56 @@ def get_log_stats():
                 "by_type": env_by_type,
                 "today": env_today,
             },
+        },
+        "msg": "success",
+    })
+
+
+# ============================================================
+# 管理员操作日志
+# ============================================================
+
+@log_bp.route("/admin", methods=["GET"])
+def get_admin_logs():
+    """获取管理员操作日志（分页+过滤）。"""
+    page = int(request.args.get("page", 1))
+    limit = min(int(request.args.get("limit", 50)), 200)
+    username = request.args.get("username")
+    keyword = request.args.get("keyword")
+
+    query = AdminLog.query.order_by(AdminLog.created_at.desc())
+
+    if username:
+        query = query.filter_by(operator_username=username)
+    if keyword:
+        query = query.filter(
+            db.or_(
+                AdminLog.action.contains(keyword),
+                AdminLog.target.contains(keyword),
+            )
+        )
+
+    total = query.count()
+    logs = query.offset((page - 1) * limit).limit(limit).all()
+
+    return jsonify({
+        "code": 0,
+        "data": {
+            "list": [
+                {
+                    "id": l.id,
+                    "operator_username": l.operator_username,
+                    "action": l.action,
+                    "target": l.target,
+                    "ip_address": l.ip_address,
+                    "detail": l.detail,
+                    "created_at": l.created_at.isoformat() if l.created_at else None,
+                }
+                for l in logs
+            ],
+            "total": total,
+            "page": page,
+            "limit": limit,
         },
         "msg": "success",
     })

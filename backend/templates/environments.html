@@ -9,9 +9,29 @@
 
 <!-- 操作按钮 -->
 <div class="action-bar">
-    <button class="btn btn-primary" onclick="showCreateForm()">➕ 创建环境</button>
-    <button class="btn btn-danger" onclick="showBatchDeleteForm()">🗑️ 批量删除</button>
-    <button class="btn btn-secondary" onclick="loadEnvironments()">🔄 刷新列表</button>
+    <div class="action-bar-left">
+        <button class="btn btn-primary" onclick="showCreateForm()">➕ 创建环境</button>
+        <button class="btn btn-danger" onclick="showBatchDeleteForm()">🗑️ 批量删除</button>
+        <button class="btn btn-secondary" onclick="refreshEnvironments()">🔄 刷新</button>
+    </div>
+    <button class="btn-search" onclick="toggleEnvSearch()">🔍 搜索</button>
+</div>
+
+<!-- 可折叠搜索栏 -->
+<div id="env-search-panel" style="display:none;padding:12px;background:var(--bg-secondary);border-radius:var(--radius);margin-bottom:12px;">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="text" id="env-search-name" placeholder="环境名称" oninput="filterEnvironments()" style="padding:6px 10px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);width:160px;">
+        <select id="env-search-group" onchange="filterEnvironments()" style="padding:6px 10px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);">
+            <option value="">所有分组</option>
+        </select>
+        <select id="env-search-status" onchange="filterEnvironments()" style="padding:6px 10px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);">
+            <option value="">所有状态</option>
+            <option value="已启动">已启动</option>
+            <option value="离线">离线</option>
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="filterEnvironments()">搜索</button>
+        <button class="btn btn-sm btn-secondary" onclick="resetEnvSearch()">重置</button>
+    </div>
 </div>
 
 <!-- 环境列表 -->
@@ -27,7 +47,7 @@
                     <th>分组</th>
                     <th>代理</th>
                     <th>状态</th>
-                    <th>操作</th>
+                    <th style="width:240px;">操作</th>
                 </tr>
             </thead>
             <tbody>
@@ -56,17 +76,28 @@
                 <input type="number" id="create-count" value="1" min="1" max="100">
             </div>
             <div class="form-group">
-                <label>初始URL（可选）</label>
-                <input type="text" id="create-url" placeholder="https://...">
-            </div>
-            <div class="form-group">
                 <label>代理ID（可选，留空则随机选择）</label>
                 <input type="text" id="create-proxy" placeholder="留空自动选择">
             </div>
             <div class="form-group">
-                <label>
-                    <input type="checkbox" id="create-queue"> 加入任务队列
-                </label>
+                <label>初始URL（可选）</label>
+                <input type="text" id="create-url" placeholder="https://...">
+            </div>
+            <div class="form-group">
+                <label>平台域名（可选）</label>
+                <input type="text" id="create-domain" placeholder="如 facebook.com">
+            </div>
+            <div class="form-group">
+                <label>账号（可选）</label>
+                <input type="text" id="create-username" placeholder="登录账号">
+            </div>
+            <div class="form-group">
+                <label>密码（可选）</label>
+                <input type="password" id="create-password" placeholder="登录密码">
+            </div>
+            <div class="form-group">
+                <label>备注（可选）</label>
+                <textarea id="create-remark" placeholder="环境备注信息" rows="2"></textarea>
             </div>
             <button type="submit" class="btn btn-primary">创建</button>
             <button type="button" class="btn btn-secondary" onclick="closeModal('create-modal')">取消</button>
@@ -85,11 +116,6 @@
                 <input type="checkbox" id="delete-force"> 强制删除（包括保留环境）
             </label>
         </div>
-        <div class="form-group">
-            <label>
-                <input type="checkbox" id="delete-queue"> 加入任务队列
-            </label>
-        </div>
         <button class="btn btn-danger" onclick="batchDelete()">确认删除</button>
         <button class="btn btn-secondary" onclick="closeModal('delete-modal')">取消</button>
     </div>
@@ -104,15 +130,134 @@
     </div>
 </div>
 
+<!-- 更新环境模态框 -->
+<div class="modal" id="update-modal" style="display:none;">
+    <div class="modal-content" style="max-width:600px;">
+        <span class="modal-close" onclick="closeModal('update-modal')">&times;</span>
+        <h2>更新环境</h2>
+        <form id="update-form" onsubmit="submitUpdate(event)">
+            <input type="hidden" id="update-profile-id" value="">
+            <div class="form-group">
+                <label>环境ID</label>
+                <input type="text" id="update-profile-id-display" readonly style="background:var(--bg-primary);color:var(--text-muted);">
+            </div>
+            <div class="form-group">
+                <label>环境名称</label>
+                <input type="text" id="update-name" placeholder="新名称（留空不修改）">
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <input type="text" id="update-remark" placeholder="新备注（留空不修改）">
+            </div>
+            <div class="form-group">
+                <label>代理ID</label>
+                <input type="text" id="update-proxy" placeholder="新代理ID（留空不修改）">
+            </div>
+            <div style="border-top:1px solid var(--border-color);padding-top:12px;margin-top:12px;">
+                <h4 style="font-size:14px;margin-bottom:8px;">指纹配置更新（可选，仅修改需要变更的项）</h4>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                    <div class="form-group">
+                        <label>屏幕分辨率</label>
+                        <input type="text" id="update-fp-screen" placeholder="如 1920_1080">
+                    </div>
+                    <div class="form-group">
+                        <label>时区</label>
+                        <input type="text" id="update-fp-timezone" placeholder="如 Asia/Shanghai">
+                    </div>
+                    <div class="form-group">
+                        <label>WebRTC</label>
+                        <select id="update-fp-webrtc">
+                            <option value="">-- 不修改 --</option>
+                            <option value="disabled">disabled</option>
+                            <option value="default">default</option>
+                            <option value="enabled">enabled</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>语言</label>
+                        <input type="text" id="update-fp-language" placeholder="如 zh-CN">
+                    </div>
+                    <div class="form-group">
+                        <label>UA</label>
+                        <input type="text" id="update-fp-ua" placeholder="自定义UA">
+                    </div>
+                    <div class="form-group">
+                        <label>Canvas</label>
+                        <select id="update-fp-canvas">
+                            <option value="">-- 不修改 --</option>
+                            <option value="0">0=关闭</option>
+                            <option value="1">1=噪音</option>
+                            <option value="2">2=默认</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>WebGL Image</label>
+                        <select id="update-fp-webgl-image">
+                            <option value="">-- 不修改 --</option>
+                            <option value="0">0=关闭</option>
+                            <option value="1">1=噪音</option>
+                            <option value="2">2=默认</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Audio</label>
+                        <select id="update-fp-audio">
+                            <option value="">-- 不修改 --</option>
+                            <option value="0">0=关闭</option>
+                            <option value="1">1=噪音</option>
+                            <option value="2">2=默认</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>CPU核心数</label>
+                        <input type="number" id="update-fp-cpu" placeholder="如 4">
+                    </div>
+                    <div class="form-group">
+                        <label>内存(GB)</label>
+                        <input type="number" id="update-fp-memory" placeholder="如 8">
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('update-modal')">取消</button>
+                <button type="submit" class="btn btn-primary">保存更新</button>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 let selectedIds = new Set();
 let allEnvironments = [];
+let activeProfiles = [];
 
-// 加载环境列表
+// ----- 数据加载 -----
+
+// 加载环境列表（从缓存）
 async function loadEnvironments() {
+    try {
+        // 从缓存获取数据
+        const cacheResp = await fetch('/api/env/cache/data');
+        const cacheData = await cacheResp.json();
+        if (cacheData.code === 0) {
+            allEnvironments = cacheData.data.profiles || [];
+            activeProfiles = cacheData.data.active_profiles || [];
+            document.getElementById('env-count').textContent = `(共 ${allEnvironments.length} 个)`;
+            renderTable();
+            loadGroupOptions();
+        } else {
+            // 缓存不可用，直接请求 AdsPower
+            fetchLive();
+        }
+    } catch(e) {
+        fetchLive();
+    }
+}
+
+// 直接请求 AdsPower
+async function fetchLive() {
     try {
         const resp = await fetch('/api/env/list/all');
         const data = await resp.json();
@@ -120,32 +265,72 @@ async function loadEnvironments() {
             allEnvironments = data.data.list || [];
             document.getElementById('env-count').textContent = `(共 ${allEnvironments.length} 个)`;
             renderTable();
+            loadGroupOptions();
         }
     } catch(e) {
         showToast('加载失败: ' + e.message, 'error');
     }
 }
 
-function renderTable() {
-    const tbody = document.querySelector('#env-table tbody');
-    tbody.innerHTML = allEnvironments.map(env => `
-        <tr>
-            <td><input type="checkbox" value="${env.profile_id}" onchange="toggleSelect('${env.profile_id}', this)" ${selectedIds.has(env.profile_id) ? 'checked' : ''}></td>
-            <td>${env.serial_number || '-'}</td>
-            <td>${escapeHtml(env.name || '') || '-'}</td>
-            <td>${env.group_name || env.group_id || '-'}</td>
-            <td>${env.ip || '-'}</td>
-            <td id="status-${env.profile_id}">--</td>
-            <td>
-                <button class="btn btn-sm btn-secondary" onclick="viewDetail('${env.profile_id}')">详情</button>
-                <button class="btn btn-sm btn-primary" onclick="startBrowser('${env.profile_id}')">启动</button>
-                <button class="btn btn-sm btn-warning" onclick="stopBrowser('${env.profile_id}')">关闭</button>
-            </td>
-        </tr>
-    `).join('') || '<tr><td colspan="7" class="text-center text-muted">暂无环境</td></tr>';
+// 刷新（从 AdsPower 重新拉取并更新缓存）
+async function refreshEnvironments() {
+    showToast('正在刷新...', 'info');
+    try {
+        await fetch('/api/env/cache/refresh', {method: 'POST'});
+    } catch(e) {}
+    await loadEnvironments();
+    showToast('已刷新', 'success');
 }
 
-// 选择逻辑
+function getStatus(profileId) {
+    return activeProfiles.some(function(a) {
+        return a.user_id === profileId || a.profile_id === profileId;
+    }) ? '已启动' : '';
+}
+
+function renderTable() {
+    const tbody = document.querySelector('#env-table tbody');
+    tbody.innerHTML = allEnvironments.map(env => {
+        var status = getStatus(env.profile_id);
+        var statusHtml = status ? '<span style="color:var(--success);">✅ 已启动</span>' : '<span style="color:var(--text-muted);">—</span>';
+        var groupName = env.group_name || env.group_id || '';
+        var groupDisplay = (groupName === '' || groupName === '0') ? '未分组' : escapeHtml(groupName);
+        return '<tr>' +
+            '<td><input type="checkbox" value="' + env.profile_id + '" onchange="toggleSelect(\'' + env.profile_id + '\', this)" ' + (selectedIds.has(env.profile_id) ? 'checked' : '') + '></td>' +
+            '<td>' + (env.profile_no || '-') + '</td>' +
+            '<td>' + escapeHtml(env.name || '') + '</td>' +
+            '<td>' + groupDisplay + '</td>' +
+            '<td>' + (env.ip || '-') + '</td>' +
+            '<td id="status-' + env.profile_id + '">' + statusHtml + '</td>' +
+            '<td><div class="action-buttons">' +
+                '<button class="btn-sm btn-edit" onclick="viewDetail(\'' + env.profile_id + '\')">详情</button>' +
+                '<button class="btn-sm btn-edit" onclick="showUpdateModal(\'' + env.profile_id + '\')">更新</button>' +
+                '<button class="btn-sm btn-enable" onclick="startBrowser(\'' + env.profile_id + '\')">启动</button>' +
+                '<button class="btn-sm btn-disable" onclick="stopBrowser(\'' + env.profile_id + '\')">关闭</button>' +
+            '</div></td>' +
+        '</tr>';
+    }).join('') || '<tr><td colspan="7" class="text-center text-muted">暂无环境</td></tr>';
+}
+
+// 加载分组下拉选项
+function loadGroupOptions() {
+    var groups = {};
+    allEnvironments.forEach(function(e) {
+        var g = e.group_name || e.group_id || '';
+        if (g && g !== '0') groups[g] = true;
+    });
+    var select = document.getElementById('env-search-group');
+    // 保留第一个"所有分组"选项
+    while (select.options.length > 1) select.remove(1);
+    Object.keys(groups).sort().forEach(function(g) {
+        var opt = document.createElement('option');
+        opt.value = g;
+        opt.textContent = g;
+        select.appendChild(opt);
+    });
+}
+
+// ----- 选择逻辑 -----
 function toggleSelectAll(el) {
     selectedIds.clear();
     if (el.checked) {
@@ -153,15 +338,13 @@ function toggleSelectAll(el) {
     }
     renderTable();
 }
-
 function toggleSelect(id, el) {
     if (el.checked) selectedIds.add(id);
     else selectedIds.delete(id);
 }
 
-// 创建环境
+// ----- 创建环境 -----
 function showCreateForm() { document.getElementById('create-modal').style.display = 'flex'; }
-
 async function createEnvironment(e) {
     e.preventDefault();
     const count = parseInt(document.getElementById('create-count').value) || 1;
@@ -171,7 +354,10 @@ async function createEnvironment(e) {
         group_id: document.getElementById('create-group').value,
         proxy_id: document.getElementById('create-proxy').value || null,
         open_url: document.getElementById('create-url').value || null,
-        use_queue: document.getElementById('create-queue').checked,
+        domain_name: document.getElementById('create-domain').value || null,
+        username: document.getElementById('create-username').value || null,
+        password: document.getElementById('create-password').value || null,
+        remark: document.getElementById('create-remark').value || null,
     };
     const resp = await fetch('/api/env/create', {
         method: 'POST',
@@ -181,15 +367,14 @@ async function createEnvironment(e) {
     const data = await resp.json();
     closeModal('create-modal');
     showToast(data.msg, data.code === 0 ? 'success' : 'error');
-    loadEnvironments();
+    refreshEnvironments();
 }
 
-// 批量删除
+// ----- 批量删除 -----
 function showBatchDeleteForm() {
     document.getElementById('delete-count').textContent = selectedIds.size;
     document.getElementById('delete-modal').style.display = 'flex';
 }
-
 async function batchDelete() {
     const resp = await fetch('/api/env/delete', {
         method: 'POST',
@@ -197,17 +382,16 @@ async function batchDelete() {
         body: JSON.stringify({
             profile_ids: Array.from(selectedIds),
             force: document.getElementById('delete-force').checked,
-            use_queue: document.getElementById('delete-queue').checked,
         }),
     });
     const data = await resp.json();
     closeModal('delete-modal');
     selectedIds.clear();
     showToast(data.msg, data.code === 0 ? 'success' : 'error');
-    loadEnvironments();
+    refreshEnvironments();
 }
 
-// 浏览器控制
+// ----- 浏览器控制 -----
 async function startBrowser(id) {
     showToast('正在启动...', 'info');
     const resp = await fetch('/api/env/browser/start', {
@@ -217,8 +401,8 @@ async function startBrowser(id) {
     });
     const data = await resp.json();
     showToast(data.msg || '已启动', data.code === 0 ? 'success' : 'error');
+    refreshEnvironments();
 }
-
 async function stopBrowser(id) {
     showToast('正在关闭...', 'info');
     const resp = await fetch('/api/env/browser/stop', {
@@ -228,21 +412,125 @@ async function stopBrowser(id) {
     });
     const data = await resp.json();
     showToast(data.msg || '已关闭', data.code === 0 ? 'success' : 'error');
+    refreshEnvironments();
 }
 
-// 详情
+// ----- 更新环境 -----
+function showUpdateModal(id) {
+    const env = allEnvironments.find(e => e.profile_id === id);
+    if (!env) { showToast('未找到环境', 'error'); return; }
+    document.getElementById('update-profile-id').value = id;
+    document.getElementById('update-profile-id-display').value = id + ' (' + (env.name || '') + ')';
+    document.getElementById('update-name').value = '';
+    document.getElementById('update-remark').value = '';
+    document.getElementById('update-proxy').value = '';
+    // 清空指纹字段
+    ['screen','timezone','language','ua','cpu','memory'].forEach(function(f) {
+        document.getElementById('update-fp-' + f).value = '';
+    });
+    ['webrtc','canvas','webgl-image','audio'].forEach(function(f) {
+        document.getElementById('update-fp-' + f.replace('-', '-')).value = '';
+    });
+    openModal('update-modal');
+}
+
+async function submitUpdate(e) {
+    e.preventDefault();
+    var profileId = document.getElementById('update-profile-id').value;
+    var body = {profile_id: profileId};
+
+    var name = document.getElementById('update-name').value.trim();
+    if (name) body.name = name;
+    var remark = document.getElementById('update-remark').value.trim();
+    if (remark) body.remark = remark;
+    var proxyId = document.getElementById('update-proxy').value.trim();
+    if (proxyId) body.proxy_id = proxyId;
+
+    // 指纹更新
+    var fp = {};
+    var screenVal = document.getElementById('update-fp-screen').value.trim();
+    if (screenVal) fp.screen_resolution = screenVal;
+    var tzVal = document.getElementById('update-fp-timezone').value.trim();
+    if (tzVal) fp.timezone = tzVal;
+    var webrtcVal = document.getElementById('update-fp-webrtc').value;
+    if (webrtcVal) fp.webrtc = webrtcVal;
+    var langVal = document.getElementById('update-fp-language').value.trim();
+    if (langVal) fp.language = langVal;
+    var uaVal = document.getElementById('update-fp-ua').value.trim();
+    if (uaVal) fp.ua = uaVal;
+    var canvasVal = document.getElementById('update-fp-canvas').value;
+    if (canvasVal !== '') fp.canvas = canvasVal;
+    var webglImgVal = document.getElementById('update-fp-webgl-image').value;
+    if (webglImgVal !== '') fp.webgl_image = webglImgVal;
+    var audioVal = document.getElementById('update-fp-audio').value;
+    if (audioVal !== '') fp.audio = audioVal;
+    var cpuVal = document.getElementById('update-fp-cpu').value.trim();
+    if (cpuVal) fp.hardware_concurrency = cpuVal;
+    var memVal = document.getElementById('update-fp-memory').value.trim();
+    if (memVal) fp.device_memory = memVal;
+
+    if (Object.keys(fp).length > 0) body.fingerprint_updates = fp;
+
+    if (Object.keys(body).length <= 1) {
+        showToast('请至少修改一项内容', 'warning');
+        return;
+    }
+
+    const resp = await fetch('/api/env/update', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    closeModal('update-modal');
+    showToast(data.msg, data.code === 0 ? 'success' : 'error');
+    refreshEnvironments();
+}
+
+// ----- 详情 -----
 async function viewDetail(id) {
     const env = allEnvironments.find(e => e.profile_id === id);
     if (!env) return;
     document.getElementById('detail-content').innerHTML = `
-        <table class="data-table">
-            ${Object.entries(env).map(([k,v]) => `<tr><td><strong>${k}</strong></td><td>${typeof v === 'object' ? JSON.stringify(v) : (v || '-')}</td></tr>`).join('')}
-        </table>
+        <div style="max-height:50vh;overflow-y:auto;">
+            <table class="data-table" style="margin-bottom:0;">
+                ${Object.entries(env).map(([k,v]) =>
+                    `<tr><td style="white-space:nowrap;width:120px;font-weight:600;color:var(--text-secondary);">${k}</td><td style="word-break:break-all;">${typeof v === 'object' ? '<code>' + escapeHtml(JSON.stringify(v, null, 2)) + '</code>' : escapeHtml(String(v || '-'))}</td></tr>`
+                ).join('')}
+            </table>
+        </div>
     `;
     document.getElementById('detail-modal').style.display = 'flex';
 }
 
-function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+// ----- 搜索栏 -----
+function toggleEnvSearch() {
+    var p = document.getElementById('env-search-panel');
+    p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+function filterEnvironments() {
+    var nameKw = document.getElementById('env-search-name').value.trim().toLowerCase();
+    var groupVal = document.getElementById('env-search-group').value;
+    var statusVal = document.getElementById('env-search-status').value;
+    var rows = document.querySelectorAll('#env-table tbody tr');
+    for (var i = 0; i < rows.length; i++) {
+        var cells = rows[i].querySelectorAll('td');
+        var name = (cells[2] || {}).textContent || '';
+        var group = (cells[3] || {}).textContent || '';
+        var status = (cells[5] || {}).textContent || '';
+        var show = true;
+        if (nameKw && name.toLowerCase().indexOf(nameKw) < 0) show = false;
+        if (groupVal && group.indexOf(groupVal) < 0) show = false;
+        if (statusVal && status.indexOf(statusVal) < 0) show = false;
+        rows[i].style.display = show ? '' : 'none';
+    }
+}
+function resetEnvSearch() {
+    document.getElementById('env-search-name').value = '';
+    document.getElementById('env-search-group').value = '';
+    document.getElementById('env-search-status').value = '';
+    filterEnvironments();
+}
 
 document.addEventListener('DOMContentLoaded', loadEnvironments);
 </script>

@@ -1,0 +1,7 @@
+{
+    "display_name": "清除缓存",
+    "description": "清除所有环境的浏览器缓存数据（local_storage, cookie, history 等）",
+    "version": "1.0",
+    "category": "standard",
+    "params": []
+}

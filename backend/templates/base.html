@@ -30,6 +30,11 @@
                 🔌 代理管理
             </a></li>
             {% endif %}
+            {% if session.get('role') == 'admin' or 'videos' in session.get('permissions', []) %}
+            <li><a href="/videos" class="nav-link {% if request.path == '/videos' %}active{% endif %}">
+                🎬 视频管理
+            </a></li>
+            {% endif %}
             {% if session.get('role') == 'admin' or 'config' in session.get('permissions', []) %}
             <li><a href="/config" class="nav-link {% if request.path == '/config' %}active{% endif %}">
                 ⚙️ 配置管理
@@ -40,6 +45,16 @@
                 📋 日志查看
             </a></li>
             {% endif %}
+            {% if session.get('role') == 'admin' or 'scripts' in session.get('permissions', []) %}
+            <li><a href="/scripts" class="nav-link {% if request.path == '/scripts' %}active{% endif %}">
+                🤖 脚本管理
+            </a></li>
+            {% endif %}
+            {% if session.get('role') == 'admin' or 'executions' in session.get('permissions', []) %}
+            <li><a href="/executions" class="nav-link {% if request.path == '/executions' %}active{% endif %}">
+                📈 执行状态
+            </a></li>
+            {% endif %}
             {% if session.get('role') == 'admin' %}
             <li><a href="/users" class="nav-link {% if request.path == '/users' %}active{% endif %}">
                 👥 权限配置
@@ -47,14 +62,15 @@
             {% endif %}
         </ul>
         <div class="sidebar-footer">
-            <div id="api-status" style="margin-bottom:8px;">
+            <div id="api-status" style="margin-bottom:12px;">
                 <span class="status-indicator" id="status-dot">●</span>
                 <span id="status-text">检查中...</span>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;">
-                <span>👤 {{ session.get('username', 'unknown') }}</span>
-                <a href="#" onclick="doLogout()" style="color:var(--text-muted);text-decoration:none;">登出</a>
+            <div style="padding:8px 0;border-top:1px solid var(--border-color);border-bottom:1px solid var(--border-color);margin-bottom:10px;">
+                <div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:4px;">👤 {{ session.get('username', 'unknown') }}</div>
+                <div style="font-size:11px;color:var(--text-muted);">{{ '管理员' if session.get('role') == 'admin' else '普通用户' }}</div>
             </div>
+            <a href="#" onclick="doLogout()" class="btn btn-sm btn-danger" style="width:100%;justify-content:center;text-decoration:none;">🚪 登出</a>
         </div>
     </nav>
 

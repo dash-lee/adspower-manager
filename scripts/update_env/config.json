@@ -1,0 +1,13 @@
+{
+    "display_name": "更新环境",
+    "description": "更新现有 AdsPower 浏览器环境的配置。选择要更新的环境，然后修改需要的字段。",
+    "version": "1.0",
+    "category": "standard",
+    "params": [
+        {"name": "profile_id", "label": "选择环境", "type": "env_select", "required": true, "placeholder": "请搜索并选择要更新的环境"},
+        {"name": "name", "label": "新名称", "type": "string", "required": false, "default": "", "placeholder": "留空不修改"},
+        {"name": "proxy_id", "label": "新代理ID", "type": "string", "required": false, "default": "", "placeholder": "留空不修改"},
+        {"name": "remark", "label": "新备注", "type": "string", "required": false, "default": "", "placeholder": "留空不修改"},
+        {"name": "open_urls", "label": "初始URL", "type": "string", "required": false, "default": "", "placeholder": "多个URL用逗号分隔"}
+    ]
+}

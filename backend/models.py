@@ -106,6 +106,121 @@ class ProxyConfig(db.Model):
         }
 
 
+class Video(db.Model):
+    """
+    视频管理表
+    ==========
+
+    存储手动添加的视频信息。
+    今日访问次数通过 VideoVisitLog 按 IP 去重统计。
+
+    表名: videos
+    """
+    __tablename__ = "videos"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    # 视频名称
+    video_name = db.Column(db.String(256), nullable=False, comment="视频名称")
+    # 视频链接
+    video_url = db.Column(db.Text, nullable=False, comment="视频链接")
+    # 所属网站（从通用配置 video_websites 中选择）
+    website = db.Column(db.String(128), nullable=False, default="", comment="所属网站")
+    # 账号名称（管理此视频所使用的账号）
+    account_name = db.Column(db.String(128), nullable=False, default="", comment="账号名称")
+    # 今日访问次数（通过 visit_log 统计）
+    today_visits = db.Column(db.Integer, nullable=False, default=0, comment="今日访问次数")
+    # 操作人
+    operator = db.Column(db.String(64), nullable=False, default="", comment="操作人")
+    # 创建时间
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    # 更新时间
+    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "video_name": self.video_name,
+            "video_url": self.video_url,
+            "website": self.website,
+            "account_name": self.account_name,
+            "today_visits": self.today_visits,
+            "operator": self.operator,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self):
+        return f"<Video {self.video_name}>"
+
+
+class VideoVisitLog(db.Model):
+    """
+    视频访问日志表（IP 去重统计）
+    =============================
+
+    记录每个视频的每日访问 IP，用于统计今日独立访问数。
+    每日凌晨可清理过期数据。
+
+    表名: video_visit_log
+    """
+    __tablename__ = "video_visit_log"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    video_id = db.Column(db.Integer, db.ForeignKey("videos.id"), nullable=False, index=True, comment="关联视频ID")
+    ip_address = db.Column(db.String(64), nullable=False, comment="访问者IP")
+    visit_date = db.Column(db.String(16), nullable=False, index=True, comment="访问日期 (YYYY-MM-DD)")
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
+    def __repr__(self):
+        return f"<VideoVisitLog video={self.video_id} ip={self.ip_address} date={self.visit_date}>"
+
+
+class VideoDailyStats(db.Model):
+    """
+    视频每日访问统计表
+    ==================
+
+    每日凌晨 0 点由定时任务统计前一天的独立访问数据（按 IP 去重）。
+    数据量较大时需分页查询，该表只记录聚合后的结果。
+
+    表名: video_daily_stats
+    索引: (stats_date, video_id) 复合索引加速查询
+    """
+    __tablename__ = "video_daily_stats"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    # 统计日期
+    stats_date = db.Column(db.String(16), nullable=False, index=True, comment="统计日期 (YYYY-MM-DD)")
+    # 视频ID
+    video_id = db.Column(db.Integer, db.ForeignKey("videos.id"), nullable=False, comment="视频ID")
+    # 视频名称（冗余存储，避免关联查询）
+    video_name = db.Column(db.String(256), nullable=False, default="", comment="视频名称")
+    # 所属网站（冗余存储）
+    website = db.Column(db.String(128), nullable=False, default="", comment="所属网站")
+    # 独立访问次数
+    visit_count = db.Column(db.Integer, nullable=False, default=0, comment="独立访问次数（按IP去重）")
+    # 创建时间
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
+    __table_args__ = (
+        db.Index("idx_stats_date_video", "stats_date", "video_id"),  # 复合索引
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "stats_date": self.stats_date,
+            "video_id": self.video_id,
+            "video_name": self.video_name,
+            "website": self.website,
+            "visit_count": self.visit_count,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+    def __repr__(self):
+        return f"<VideoDailyStats {self.stats_date} video={self.video_id} visits={self.visit_count}>"
+
+
 class FingerprintPool(db.Model):
     """
     指纹随机池表
@@ -123,8 +238,10 @@ class FingerprintPool(db.Model):
     # 参数名称: screen_resolution, fonts, hardware_concurrency, device_memory, media_devices
     param_name = db.Column(db.String(64), nullable=False, index=True, comment="指纹参数名称")
     # 候选值 (字符串形式)
-    param_value = db.Column(db.Text, nullable=False, comment="候选值")
-    # 权重: 数值越大被选中的概率越高（1-10）
+    param_value = db.Column(db.Text, nullable=False, comment="候选值（逗号分隔）")
+    # 各候选值对应的权重（逗号分隔，与param_value一一对应）
+    param_weights = db.Column(db.Text, nullable=False, default="", comment="各候选值权重（逗号分隔，与param_value一一对应）")
+    # 权重: 数值越大被选中的概率越高（保留以兼容旧逻辑）
     weight = db.Column(db.Integer, nullable=False, default=1, comment="随机权重 1-10")
     # 是否启用 (1=启用, 0=禁用)
     enabled = db.Column(db.Integer, nullable=False, default=1)
@@ -188,8 +305,12 @@ class TaskQueue(db.Model):
         db.String(32),
         nullable=False,
         index=True,
-        comment="任务类型: create_env / delete_env / update_env / check_status"
+        comment="任务类型: create_env / delete_env / update_env / check_status / script"
     )
+    # 关联脚本名称（当 task_type='script' 时有效）
+    script_name = db.Column(db.String(128), nullable=False, default="", comment="关联脚本名称")
+    # 显示任务名称
+    task_name = db.Column(db.String(128), nullable=False, default="", comment="显示任务名称")
     # 任务参数（JSON 字符串）
     params = db.Column(db.Text, nullable=False, default="{}", comment="任务参数 JSON")
     # 任务状态: pending / running / completed / failed / cancelled
@@ -311,3 +432,148 @@ class User(db.Model):
 
     def __repr__(self):
         return f"<User {self.username} [{self.role}]>"
+
+
+class ScriptTask(db.Model):
+    """
+    脚本任务定义表
+    ==============
+
+    存储 scripts/ 目录下每个脚本的元信息，
+    由 ScriptManager.list_scripts() 扫描时自动同步。
+
+    表名: script_tasks
+    """
+    __tablename__ = "script_tasks"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    # 脚本名称（文件夹名）
+    script_name = db.Column(db.String(128), unique=True, nullable=False, index=True, comment="脚本名称（文件夹名）")
+    # 显示名称（UI展示用）
+    display_name = db.Column(db.String(256), nullable=False, default="", comment="显示名称")
+    # 功能描述
+    description = db.Column(db.Text, nullable=False, default="", comment="脚本描述")
+    # 版本号
+    version = db.Column(db.String(16), nullable=False, default="1.0", comment="版本号")
+    # 分类：environment / monitor / general
+    category = db.Column(db.String(64), nullable=False, default="general", comment="分类")
+    # 参数定义 JSON（对应 config.json 的 params 字段）
+    param_schema = db.Column(db.Text, nullable=False, default="[]", comment="参数定义JSON")
+    # 是否启用
+    enabled = db.Column(db.Integer, nullable=False, default=1)
+    # 创建/更新时间
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    def __repr__(self):
+        return f"<ScriptTask {self.script_name} v{self.version}>"
+
+
+class ScriptRunLog(db.Model):
+    """
+    脚本运行日志表
+    ==============
+
+    记录每次脚本执行的每一步详细信息，
+    取代原 EnvRuntimeLog（标记为 deprecated）。
+
+    表名: script_run_logs
+    """
+    __tablename__ = "script_run_logs"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    # 执行批次ID（每次运行时生成UUID前8位）
+    execution_id = db.Column(db.String(64), nullable=False, index=True, comment="执行批次ID")
+    # 脚本名称
+    script_name = db.Column(db.String(128), nullable=False, index=True, comment="脚本名称")
+    # 任务名称
+    task_name = db.Column(db.String(128), nullable=False, default="", comment="任务名称")
+    # 步骤序号
+    step_index = db.Column(db.Integer, nullable=False, default=0, comment="步骤序号")
+    # 步骤名称
+    step_name = db.Column(db.String(256), nullable=False, default="", comment="步骤名称")
+    # 步骤类型: info/success/warning/error/api_call/start/end
+    step_type = db.Column(db.String(32), nullable=False, default="info", comment="步骤类型")
+    # 步骤消息（展示给用户看）
+    message = db.Column(db.Text, nullable=False, default="", comment="步骤消息")
+    # 详细数据（JSON格式）
+    detail = db.Column(db.Text, nullable=True, comment="详细JSON数据")
+    # 关联环境ID（可选）
+    profile_id = db.Column(db.String(64), nullable=True, comment="关联环境ID")
+    # 记录时间
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, index=True)
+
+    def __repr__(self):
+        return f"<ScriptRunLog {self.execution_id} ({self.step_type}) {self.message[:40]}>"
+
+
+class ExecutionStatus(db.Model):
+    """
+    执行状态表
+    ==========
+
+    记录组合脚本/标准脚本中每个线程的执行状态。
+    每个线程（一个环境）对应一条记录，包含开始/结束时间、状态、异常信息。
+
+    表名: execution_status
+    """
+    __tablename__ = "execution_status"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    # 执行批次ID（每次执行时生成）
+    execution_id = db.Column(db.String(64), nullable=False, index=True, comment="执行批次ID")
+    # 脚本名称
+    script_name = db.Column(db.String(128), nullable=False, index=True, comment="脚本名称")
+    # 脚本类型: standard / combo
+    script_type = db.Column(db.String(16), nullable=False, default="standard", comment="脚本类型: standard/combo")
+    # 线程序号
+    thread_index = db.Column(db.Integer, nullable=False, default=0, comment="线程序号")
+    # 关联环境ID
+    profile_id = db.Column(db.String(64), nullable=True, comment="关联环境ID")
+    # 环境名称
+    env_name = db.Column(db.String(256), nullable=False, default="", comment="环境名称")
+    # 执行状态: pending / running / completed / failed
+    status = db.Column(db.String(16), nullable=False, default="pending", index=True, comment="执行状态")
+    # 执行参数（JSON）
+    params = db.Column(db.Text, nullable=True, comment="执行参数JSON")
+    # 错误信息
+    error_message = db.Column(db.Text, nullable=True, comment="错误信息")
+    # 开始时间
+    started_at = db.Column(db.DateTime, nullable=True, comment="开始时间")
+    # 完成时间
+    completed_at = db.Column(db.DateTime, nullable=True, comment="完成时间")
+    # 创建时间
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
+    def __repr__(self):
+        return f"<ExecutionStatus {self.execution_id} #{self.thread_index} [{self.status}]>"
+
+
+class AdminLog(db.Model):
+    """
+    管理员操作日志表
+    ================
+
+    记录管理员在后台的所有操作，
+    包括修改配置、创建/删除环境、用户管理等。
+
+    表名: admin_log
+    """
+    __tablename__ = "admin_log"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    # 操作用户名
+    operator_username = db.Column(db.String(64), nullable=False, index=True, comment="操作用户名")
+    # 操作描述（如 "修改通用配置: adspower_api_url"）
+    action = db.Column(db.String(256), nullable=False, comment="操作描述")
+    # 操作对象（如配置键、环境ID等）
+    target = db.Column(db.String(256), nullable=False, default="", comment="操作对象")
+    # 操作者 IP 地址
+    ip_address = db.Column(db.String(64), nullable=False, default="", comment="操作者IP")
+    # 详细信息（JSON 格式）
+    detail = db.Column(db.Text, nullable=True)
+    # 操作时间
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, index=True)
+
+    def __repr__(self):
+        return f"<AdminLog {self.operator_username}: {self.action}>"

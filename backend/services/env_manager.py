@@ -27,6 +27,64 @@ from backend.models import (
 from backend.services.adspower_client import AdsPowerClient
 
 
+def _parse_weights(raw_weights: str, expected_count: int, default: int = 5) -> list[int]:
+    """
+    解析逗号分隔的权重字符串为整数列表。
+
+    如果权重字符串为空或长度不匹配，返回全等权重（所有值权重相同）。
+
+    Args:
+        raw_weights: 逗号分隔的权重字符串 (如 "5,4,3,1")
+        expected_count: 期望的权重数量（与候选值数量对应）
+        default: 权重默认值
+
+    Returns:
+        int 列表，长度 = expected_count
+    """
+    if not raw_weights or not raw_weights.strip():
+        return [default] * expected_count
+    parts = [w.strip() for w in raw_weights.split(",") if w.strip()]
+    if len(parts) != expected_count:
+        return [default] * expected_count
+    weights = []
+    for p in parts:
+        try:
+            w = max(1, int(p))  # 最小权重为 1
+        except (ValueError, TypeError):
+            w = default
+        weights.append(w)
+    return weights
+
+
+def _weighted_choice(items: list, weights: list[int]) -> str:
+    """
+    按权重从列表中随机选取一个元素。
+
+    使用区间法：计算总权重，生成 [0, 总权重) 的随机数，
+    判定落在哪个区间，返回对应元素。
+
+    例如 items=["A","B","C"], weights=[5,3,2]：
+    总权重=10，随机数7 → 落在 B 的区间 [5, 8) → 返回 B
+
+    Args:
+        items: 候选值列表
+        weights: 对应的权重列表（正整数，不限范围）
+
+    Returns:
+        被选中的元素
+    """
+    total = sum(weights)
+    if total <= 0:
+        return random.choice(items) if items else ""
+    r = random.random() * total
+    cumulative = 0
+    for i, w in enumerate(weights):
+        cumulative += w
+        if r < cumulative:
+            return items[i]
+    return items[-1] if items else ""
+
+
 class EnvManager:
     """
     环境管理器。
@@ -35,14 +93,16 @@ class EnvManager:
     包括创建、删除、更新、初始化检查等。
     """
 
-    def __init__(self, client: AdsPowerClient):
+    def __init__(self, client: AdsPowerClient, app=None):
         """
         初始化环境管理器。
 
         Args:
             client: AdsPower API 客户端实例
+            app:    Flask 应用实例（用于在后台线程中访问数据库，可选）
         """
         self.client = client
+        self._app = app
 
     # ============================================================
     # 配置读取方法（从数据库读取，即时生效）
@@ -218,28 +278,34 @@ class EnvManager:
         ]
 
         for param_name in param_names:
-            # 查询该参数的所有启用候选值
-            candidates = (
+            # 查询该参数的启用记录（合并后每个参数只有一条记录）
+            candidate = (
                 FingerprintPool.query
                 .filter_by(param_name=param_name, enabled=1)
-                .all()
+                .first()
             )
-            if not candidates:
+            if not candidate:
                 continue
 
-            # 按权重随机选择
-            if len(candidates) == 1:
-                chosen = candidates[0]
+            # 解析候选值（逗号分隔的多个值，从中按权重随机选一个）
+            raw_value = candidate.param_value
+            raw_weights = candidate.param_weights
+
+            # 处理复杂类型：fonts 和 media_devices_num 用特殊分隔
+            if param_name in ("fonts", "media_devices_num"):
+                import re
+                parts = re.split(r'(?<=\]),(?=\[)|(?<=\}),(?=\{)', raw_value)
+                # 权重解析：font/media_devices_num 的权重也按相同分隔拆分
+                weights = _parse_weights(raw_weights, len(parts), default=5)
+                chosen_raw = _weighted_choice(parts, weights).strip()
             else:
-                # 构建加权选择列表
-                # 重复每个候选项 weight 次，然后随机抽取
-                weighted_pool = []
-                for c in candidates:
-                    weighted_pool.extend([c] * max(1, c.weight))
-                chosen = random.choice(weighted_pool)
+                # 简单标量参数：逗号分隔
+                parts = [v.strip() for v in raw_value.split(",") if v.strip()]
+                weights = _parse_weights(raw_weights, len(parts), default=5)
+                chosen_raw = _weighted_choice(parts, weights) if parts else raw_value
 
             # 根据参数类型解析值
-            value = self._parse_pool_value(param_name, chosen.param_value)
+            value = self._parse_pool_value(param_name, chosen_raw)
             if value is not None:
                 config[param_name] = value
 
@@ -296,6 +362,10 @@ class EnvManager:
         use_random_fingerprint: bool = True,
         custom_fingerprint: Optional[dict] = None,
         open_url: Optional[str] = None,
+        domain_name: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        remark: Optional[str] = None,
     ) -> dict:
         """
         创建单个浏览器环境。
@@ -384,6 +454,10 @@ class EnvManager:
             proxy_id=proxy_id,
             user_proxy_config=user_proxy_config,
             open_urls=open_urls,
+            domain_name=domain_name,
+            username=username,
+            password=password,
+            remark=remark,
         )
 
         # 3.6 处理结果

@@ -17,14 +17,14 @@
 <!-- ===== 通用配置 ===== -->
 <div class="tab-content active" id="tab-general">
     <div class="card">
-        <h3>通用配置 <button class="btn btn-sm btn-primary" onclick="openModal('general-modal')">+ 添加</button>
+        <h3>通用配置 <button class="btn btn-sm btn-primary" onclick="resetGeneralForm();openModal('general-modal')">+ 添加</button>
             <button class="btn btn-sm btn-warning" onclick="reloadClient()" style="margin-left:8px;" title="修改 API URL/Key 后点击此按钮即时生效">🔄 重载客户端</button>
         </h3>
         <table class="data-table" id="general-table">
             <thead>
-                <tr><th>配置键</th><th>值</th><th>分类</th><th>备注</th><th>操作人</th><th>操作</th></tr>
+                <tr><th>配置键</th><th>值</th><th>备注</th><th>操作人</th><th>操作</th></tr>
             </thead>
-            <tbody><tr><td colspan="6" class="text-center text-muted">加载中...</td></tr></tbody>
+            <tbody><tr><td colspan="5" class="text-center text-muted">加载中...</td></tr></tbody>
         </table>
     </div>
 </div>
@@ -45,21 +45,8 @@
                 <input type="text" name="config_value" placeholder="配置的值" required>
             </div>
             <div class="form-group">
-                <label>分类</label>
-                <select name="category">
-                    <option value="general">general（通用）</option>
-                    <option value="proxy">proxy（代理）</option>
-                    <option value="fingerprint">fingerprint（指纹）</option>
-                    <option value="environment">environment（环境）</option>
-                </select>
-            </div>
-            <div class="form-group">
                 <label>备注</label>
                 <input type="text" name="remark" placeholder="说明这个配置的用途">
-            </div>
-            <div class="form-group">
-                <label>操作人</label>
-                <input type="text" name="operator" placeholder="谁添加的（如 admin / 张三）">
             </div>
             <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('general-modal')">取消</button>
@@ -70,29 +57,31 @@
 </div>
 
 <!-- ===== 指纹随机池 ===== -->
+
 <div class="tab-content" id="tab-fingerprint">
     <div class="card">
-        <h3>指纹随机池 <button class="btn btn-sm btn-primary" onclick="openModal('fingerprint-modal')">+ 添加候选项</button>
+        <h3>指纹随机池 <button class="btn btn-sm btn-primary" onclick="openAddFingerprintModal()">+ 添加参数</button>
             <button class="btn btn-sm btn-secondary" onclick="initDefaults()" style="margin-left:8px;">📦 初始化默认值</button>
         </h3>
+        <p class="text-muted" style="font-size:12px;margin-top:4px;">每个参数名为一行，候选值与权重用逗号 <code style="font-size:12px;">,</code> 分隔，一一对应（系统按权重随机选取）<br><small>候选值自动换行显示全部内容</small></p>
         <table class="data-table" id="fingerprint-table">
             <thead>
-                <tr><th>参数名</th><th>候选值</th><th>权重</th><th>状态</th><th>备注</th><th>操作人</th><th>操作</th></tr>
+                <tr><th style="width:140px;">参数名</th><th>候选值</th><th style="width:80px;">权重</th><th style="width:50px;">状态</th><th>备注</th><th style="width:160px;">操作</th></tr>
             </thead>
-            <tbody><tr><td colspan="7" class="text-center text-muted">加载中...</td></tr></tbody>
+            <tbody><tr><td colspan="6" class="text-center text-muted">加载中...</td></tr></tbody>
         </table>
     </div>
 </div>
 
-<!-- 指纹随机池添加弹窗 -->
+<!-- 指纹参数编辑弹窗 -->
 <div class="modal" id="fingerprint-modal">
-    <div class="modal-content">
+    <div class="modal-content" style="max-width:600px;">
         <span class="modal-close" onclick="closeModal('fingerprint-modal')">&times;</span>
-        <h2>添加指纹候选项</h2>
+        <h2 id="fingerprint-modal-title">添加指纹参数</h2>
         <form id="fingerprint-form" onsubmit="submitFingerprintForm(event)">
             <div class="form-group">
                 <label>参数名 <span style="color:var(--error)">*</span></label>
-                <select name="param_name" required>
+                <select name="param_name" id="fp-param-name" required>
                     <option value="">-- 请选择 --</option>
                     <option value="screen_resolution">screen_resolution（屏幕分辨率）</option>
                     <option value="fonts">fonts（字体列表）</option>
@@ -106,21 +95,23 @@
                 </select>
             </div>
             <div class="form-group">
-                <label>候选值 <span style="color:var(--error)">*</span></label>
-                <textarea name="param_value" placeholder="输入候选值（如 1920_1080）" rows="3" required style="width:100%;padding:8px 12px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:14px;resize:vertical;font-family:monospace;"></textarea>
-            </div>
-            <div class="form-group">
-                <label>权重 (1-10，越大被选中概率越高)</label>
-                <input type="number" name="weight" value="5" min="1" max="10" style="width:100px;">
+                <label>候选值（每个值可单独设权重，权重越大选中概率越高）</label>
+                <div id="fp-values-container">
+                    <!-- 动态生成的候选值+权重输入行 -->
+                </div>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="addFpValueRow()" style="margin-top:6px;">+ 添加候选值</button>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+                    💡 权重范围 1-10，默认 5。JSON值（fonts/media_devices_num）直接粘贴完整片段。
+                </div>
             </div>
             <div class="form-group">
                 <label>备注</label>
-                <input type="text" name="remark" placeholder="说明这个候选项">
+                <input type="text" name="remark" id="fp-remark" placeholder="说明这个参数">
             </div>
-            <div class="form-group">
-                <label>操作人</label>
-                <input type="text" name="operator" placeholder="谁添加的">
-            </div>
+            <!-- 隐藏字段：序列化后的值和权重 -->
+            <input type="hidden" name="param_value" id="fp-param-value" value="">
+            <input type="hidden" name="param_weights" id="fp-param-weights" value="">
+            <input type="hidden" name="orig_param_name" id="fp-orig-name" value="">
             <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('fingerprint-modal')">取消</button>
                 <button type="submit" class="btn btn-primary">保存</button>
@@ -135,9 +126,9 @@
         <h3>环境保留 <button class="btn btn-sm btn-primary" onclick="openModal('preserved-modal')">+ 添加保留环境</button></h3>
         <table class="data-table" id="preserved-table">
             <thead>
-                <tr><th>环境ID</th><th>名称</th><th>备注</th><th>操作人</th><th>操作</th></tr>
+                <tr><th>环境ID</th><th>名称</th><th>备注</th><th>操作</th></tr>
             </thead>
-            <tbody><tr><td colspan="5" class="text-center text-muted">加载中...</td></tr></tbody>
+            <tbody><tr><td colspan="4" class="text-center text-muted">加载中...</td></tr></tbody>
         </table>
     </div>
 </div>
@@ -159,10 +150,6 @@
             <div class="form-group">
                 <label>备注</label>
                 <input type="text" name="remark" placeholder="保留原因等说明">
-            </div>
-            <div class="form-group">
-                <label>操作人</label>
-                <input type="text" name="operator" placeholder="谁添加的">
             </div>
             <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('preserved-modal')">取消</button>
@@ -210,42 +197,91 @@ async function loadGeneralConfig() {
         tbody.innerHTML = data.data.map(c => `
             <tr>
                 <td><code>${escapeHtml(c.config_key)}</code></td>
-                <td><input type="text" value="${escapeHtml(c.config_value)}" data-key="${escapeHtml(c.config_key)}" class="inline-input" onchange="updateGeneral('${escapeHtml(c.config_key)}', this.value)"></td>
-                <td>${escapeHtml(c.category) || '-'}</td>
+                <td><span class="config-val-text">${escapeHtml(c.config_value) || '-'}</span></td>
                 <td>${escapeHtml(c.remark) || '-'}</td>
                 <td>${escapeHtml(c.operator) || '-'}</td>
-                <td><button class="btn btn-sm btn-danger" onclick="deleteGeneral(${c.id})">删除</button></td>
+                <td>
+                    <div class="action-buttons">
+                        <button class="btn-sm btn-edit" onclick="openGeneralEditModal(${c.id})">编辑</button>
+                        <button class="btn-danger-sm" onclick="deleteGeneral(${c.id})">删除</button>
+                    </div>
+                </td>
             </tr>
         `).join('');
     }
 }
 
-async function updateGeneral(key, value) {
-    const resp = await fetch('/api/config/general', {
+/** 打开编辑弹窗 */
+async function openGeneralEditModal(id) {
+    var resp = await fetch('/api/config/general');
+    var data = await resp.json();
+    if (data.code !== 0) { showToast(data.msg, 'error'); return; }
+    var item = null;
+    for (var i = 0; i < data.data.length; i++) {
+        if (data.data[i].id === id) { item = data.data[i]; break; }
+    }
+    if (!item) { showToast('未找到该配置', 'error'); return; }
+    document.getElementById('general-modal-title').textContent = '编辑配置';
+    document.getElementById('general-form').reset();
+    // Fill the form with existing values
+    var form = document.getElementById('general-form');
+    form.querySelector('[name="id"]').value = item.id;
+    form.querySelector('[name="config_key"]').value = item.config_key;
+    form.querySelector('[name="config_key"]').readOnly = true;
+    form.querySelector('[name="config_value"]').value = item.config_value;
+    form.querySelector('[name="remark"]').value = item.remark || '';
+    openModal('general-modal');
+}
+
+function resetGeneralForm() {
+    var form = document.getElementById('general-form');
+    form.reset();
+    form.querySelector('[name="id"]').value = '';
+    form.querySelector('[name="config_key"]').readOnly = false;
+    document.getElementById('general-modal-title').textContent = '添加通用配置';
+}
+
+async function submitGeneralForm(e) {
+    e.preventDefault();
+    var form = document.getElementById('general-form');
+    var fd = new FormData(form);
+    var body = Object.fromEntries(fd.entries());
+    var editId = body.id;
+    delete body.id;
+    // Remove empty strings
+    for (var k in body) { if (body[k] === '') body[k] = ''; }
+
+    var resp = await fetch('/api/config/general', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({config_key: key, config_value: value})
+        body: JSON.stringify(body)
     });
-    const data = await resp.json();
-    showToast('配置已更新（即时生效）', 'success');
-    // 如果是 API 相关配置，自动重载客户端
-    if (key === 'adspower_api_url' || key === 'adspower_api_key') {
-        showToast('检测到 API 配置变更，正在重载客户端...', 'info');
-        await reloadClient();
+    var data = await resp.json();
+    showToast(data.msg, data.code === 0 ? 'success' : 'error');
+    if (data.code === 0) {
+        if (body.config_key === 'adspower_api_url' || body.config_key === 'adspower_api_key') {
+            showToast('检测到 API 配置变更，正在重载客户端...', 'info');
+            await reloadClient();
+        }
+        closeModal('general-modal');
+        form.reset();
+        loadGeneralConfig();
     }
 }
 
+/** 重载客户端 */
 async function reloadClient() {
     showToast('正在重载 AdsPower 客户端...', 'info');
-    const resp = await fetch('/api/config/reload_client', {method:'POST'});
-    const data = await resp.json();
+    var resp = await fetch('/api/config/reload_client', {method:'POST'});
+    var data = await resp.json();
     if (data.code === 0) {
-        showToast(`客户端已重载: API ${data.data.api_ok ? '正常' : '异常'}`, data.data.api_ok ? 'success' : 'error');
+        showToast('客户端已重载: API ' + (data.data.api_ok ? '正常' : '异常'), data.data.api_ok ? 'success' : 'error');
     } else {
         showToast(data.msg, 'error');
     }
 }
 
+/** 删除配置 */
 async function deleteGeneral(id) {
     if (!confirm('确定删除此配置?')) return;
     await fetch('/api/config/general/' + id, {method: 'DELETE'});
@@ -253,19 +289,27 @@ async function deleteGeneral(id) {
     loadGeneralConfig();
 }
 
+/** 提交表单 */
 async function submitGeneralForm(e) {
     e.preventDefault();
-    const form = document.getElementById('general-form');
-    const fd = new FormData(form);
-    const body = Object.fromEntries(fd.entries());
-    const resp = await fetch('/api/config/general', {
+    var form = document.getElementById('general-form');
+    var fd = new FormData(form);
+    var body = Object.fromEntries(fd.entries());
+    var editId = body.id;
+    delete body.id;
+    for (var k in body) { if (body[k] === '') body[k] = ''; }
+    var resp = await fetch('/api/config/general', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(body)
     });
-    const data = await resp.json();
+    var data = await resp.json();
     showToast(data.msg, data.code === 0 ? 'success' : 'error');
     if (data.code === 0) {
+        if (body.config_key === 'adspower_api_url' || body.config_key === 'adspower_api_key') {
+            showToast('检测到 API 配置变更，正在重载客户端...', 'info');
+            await reloadClient();
+        }
         closeModal('general-modal');
         form.reset();
         loadGeneralConfig();
@@ -273,45 +317,155 @@ async function submitGeneralForm(e) {
 }
 
 // ===== 指纹随机池 =====
-async function loadFingerprintConfig() {
-    const resp = await fetch('/api/config/fingerprint');
-    const data = await resp.json();
-    const tbody = document.querySelector('#fingerprint-table tbody');
-    if (data.code === 0) {
-        tbody.innerHTML = data.data.map(f => `
-            <tr>
-                <td><code>${escapeHtml(f.param_name)}</code></td>
-                <td><small>${escapeHtml(f.param_value)}</small></td>
-                <td>${f.weight}</td>
-                <td><span class="badge ${f.enabled ? 'badge-success' : 'badge-muted'}">${f.enabled ? '启用' : '禁用'}</span></td>
-                <td>${escapeHtml(f.remark) || '-'}</td>
-                <td>${escapeHtml(f.operator) || '-'}</td>
-                <td>
-                    <button class="btn btn-sm btn-secondary" onclick="toggleFingerprint(${f.id}, ${f.enabled ? 0 : 1})">${f.enabled ? '禁用' : '启用'}</button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteFingerprint(${f.id})">删除</button>
-                </td>
-            </tr>
-        `).join('') || '<tr><td colspan="7" class="text-center text-muted">暂无候选项（点击"初始化默认值"添加）</td></tr>';
+var fingerprintEditId = null;
+var fpValueRowCounter = 0;
+
+/** 按参数类型拆分候选值 */
+function splitFpValues(rawValue, paramName) {
+    if (paramName === 'fonts' || paramName === 'media_devices_num') {
+        return rawValue.split(/(?<=\]),(?=\[)|(?<=\}),(?=\{)/).map(function(s) { return s.trim(); }).filter(Boolean);
     }
+    return rawValue.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+}
+
+/** 加载指纹池数据（候选值自动换行显示全部） */
+async function loadFingerprintConfig() {
+    var resp = await fetch('/api/config/fingerprint');
+    var data = await resp.json();
+    var tbody = document.querySelector('#fingerprint-table tbody');
+    if (data.code === 0) {
+        var html = '';
+        for (var i = 0; i < data.data.length; i++) {
+            var f = data.data[i];
+            var vals = splitFpValues(f.param_value, f.param_name);
+            var valText = vals.join(', ');
+            var valEscaped = escapeHtml(valText);
+            var wText = f.param_weights || '';
+            html += '<tr>' +
+                '<td><code>' + escapeHtml(f.param_name) + '</code></td>' +
+                '<td style="line-height:1.8;max-width:300px;word-break:break-all;"><span class="fp-value-text" style="white-space:normal;">' + valEscaped + '</span></td>' +
+                '<td><code style="font-size:12px;">' + escapeHtml(wText) + '</code></td>' +
+                '<td><span class="badge ' + (f.enabled ? 'badge-success' : 'badge-muted') + '">' + (f.enabled ? '启用' : '禁用') + '</span></td>' +
+                '<td><small>' + (escapeHtml(f.remark) || '-') + '</small></td>' +
+                '<td><div class="action-buttons">' +
+                    '<button class="btn-sm btn-edit" onclick="openEditFingerprintModal(' + f.id + ')">编辑</button>' +
+                    '<button class="btn-sm ' + (f.enabled ? 'btn-disable' : 'btn-enable') + '" onclick="toggleFingerprint(' + f.id + ', ' + (f.enabled ? 0 : 1) + ')">' + (f.enabled ? '禁用' : '启用') + '</button>' +
+                    '<button class="btn-danger-sm" onclick="deleteFingerprint(' + f.id + ')">删除</button>' +
+                '</div></td>' +
+            '</tr>';
+        }
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center text-muted">暂无指纹参数</td></tr>';
+    }
+}
+
+/** ===== 动态候选值行管理 ===== */
+function addFpValueRow(value, weight) {
+    var container = document.getElementById('fp-values-container');
+    if (!container) return;
+    var idx = fpValueRowCounter++;
+    var rowId = 'fp-row-' + idx;
+    var div = document.createElement('div');
+    div.className = 'fp-value-row';
+    div.id = rowId;
+    div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px;';
+    var val = value || '';
+    var w = weight || 5;
+    div.innerHTML = [
+        '<input type="text" class="fp-row-value" placeholder="候选值" value="' + escapeHtml(val) + '"',
+        '       style="flex:1;padding:6px 10px;border:1px solid var(--border-color);border-radius:4px;',
+        '              background:var(--bg-primary);color:var(--text-primary);font-family:monospace;font-size:13px;">',
+        '<span style="color:var(--text-muted);font-size:13px;white-space:nowrap;">权重</span>',
+        '<input type="number" class="fp-row-weight" value="' + w + '"',
+        '       style="width:70px;padding:6px 8px;border:1px solid var(--border-color);border-radius:4px;',
+        '              background:var(--bg-primary);color:var(--text-primary);text-align:center;">',
+        '<button type="button" class="btn btn-sm btn-danger" onclick="this.parentElement.remove()" style="padding:4px 8px;">✕</button>',
+    ].join('\n');
+    container.appendChild(div);
+}
+
+function serializeFpForm() {
+    var rows = document.querySelectorAll('#fp-values-container .fp-value-row');
+    var values = [];
+    var weights = [];
+    for (var i = 0; i < rows.length; i++) {
+        var val = (rows[i].querySelector('.fp-row-value').value || '').trim();
+        if (val) {
+            values.push(val);
+            var w = parseInt(rows[i].querySelector('.fp-row-weight').value) || 1;
+            weights.push(w < 1 ? 1 : w);
+        }
+    }
+    document.getElementById('fp-param-value').value = values.join(',');
+    document.getElementById('fp-param-weights').value = weights.join(',');
+}
+
+function deserializeFpForm(valuesStr, weightsStr, paramName) {
+    var container = document.getElementById('fp-values-container');
+    container.innerHTML = '';
+    fpValueRowCounter = 0;
+    var vals = splitFpValues(valuesStr, paramName);
+    var wArr = (weightsStr || '').split(',').map(function(w) { return parseInt(w.trim()) || 1; });
+    for (var i = 0; i < vals.length; i++) {
+        addFpValueRow(vals[i], wArr[i] || 1);
+    }
+    if (vals.length === 0) addFpValueRow('', 1);
+}
+
+function openAddFingerprintModal() {
+    fingerprintEditId = null;
+    document.getElementById('fingerprint-modal-title').textContent = '添加指纹参数';
+    document.getElementById('fingerprint-form').reset();
+    document.getElementById('fp-orig-name').value = '';
+    document.getElementById('fp-values-container').innerHTML = '';
+    fpValueRowCounter = 0;
+    addFpValueRow('', 5);
+    openModal('fingerprint-modal');
+}
+
+async function openEditFingerprintModal(id) {
+    fingerprintEditId = id;
+    document.getElementById('fingerprint-modal-title').textContent = '编辑指纹参数';
+    var resp = await fetch('/api/config/fingerprint');
+    var data = await resp.json();
+    if (data.code !== 0) { showToast(data.msg, 'error'); return; }
+    var item = null;
+    for (var i = 0; i < data.data.length; i++) {
+        if (data.data[i].id === id) { item = data.data[i]; break; }
+    }
+    if (!item) { showToast('未找到该参数', 'error'); return; }
+    document.getElementById('fp-param-name').value = item.param_name;
+    document.getElementById('fp-remark').value = item.remark || '';
+    document.getElementById('fp-orig-name').value = item.param_name;
+    deserializeFpForm(item.param_value, item.param_weights, item.param_name);
+    openModal('fingerprint-modal');
 }
 
 async function submitFingerprintForm(e) {
     e.preventDefault();
-    const form = document.getElementById('fingerprint-form');
-    const fd = new FormData(form);
-    const body = Object.fromEntries(fd.entries());
+    serializeFpForm();
+    var paramValue = document.getElementById('fp-param-value').value;
+    if (!paramValue) { showToast('请至少添加一个候选值', 'error'); return; }
+    var form = document.getElementById('fingerprint-form');
+    var fd = new FormData(form);
+    var body = Object.fromEntries(fd.entries());
     body.enabled = 1;
-    body.weight = parseInt(body.weight) || 5;
-    const resp = await fetch('/api/config/fingerprint', {
+    delete body.orig_param_name;
+    var origName = document.getElementById('fp-orig-name').value;
+    if (fingerprintEditId && origName && origName !== body.param_name) {
+        await fetch('/api/config/fingerprint/' + fingerprintEditId, {method: 'DELETE'});
+        fingerprintEditId = null;
+    }
+    var resp = await fetch('/api/config/fingerprint', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(body)
     });
-    const data = await resp.json();
-    showToast(data.msg, data.code === 0 ? 'success' : 'error');
-    if (data.code === 0) {
+    var result = await resp.json();
+    showToast(result.msg, result.code === 0 ? 'success' : 'error');
+    if (result.code === 0) {
         closeModal('fingerprint-modal');
         form.reset();
+        fingerprintEditId = null;
         loadFingerprintConfig();
     }
 }
@@ -353,10 +507,9 @@ async function loadPreservedConfig() {
                 <td><code>${escapeHtml(e.profile_id)}</code></td>
                 <td>${escapeHtml(e.env_name) || '-'}</td>
                 <td>${escapeHtml(e.remark) || '-'}</td>
-                <td>${escapeHtml(e.operator) || '-'}</td>
                 <td><button class="btn btn-sm btn-danger" onclick="deletePreserved(${e.id})">移除</button></td>
             </tr>
-        `).join('') || '<tr><td colspan="5" class="text-center text-muted">暂无保留环境</td></tr>';
+        `).join('') || '<tr><td colspan="4" class="text-center text-muted">暂无保留环境</td></tr>';
     }
 }
 

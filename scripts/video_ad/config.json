@@ -1,0 +1,67 @@
+{
+    "display_name": "视频广告",
+    "description": "视频广告投放脚本 - 多环境并发执行，自动轮换代理",
+    "version": "2.0",
+    "category": "combo",
+    "params": [
+        {
+            "name": "max_env_count",
+            "label": "最大打开环境数量",
+            "type": "number",
+            "required": true,
+            "default": 5,
+            "placeholder": "同时最多运行几个浏览器",
+            "description": "同时打开并运行的浏览器最大数量"
+        },
+        {
+            "name": "env_ids",
+            "label": "选择环境",
+            "type": "env_multi_select",
+            "required": true,
+            "description": "选择要使用的环境，选择数量不能超过最大打开环境数量"
+        },
+        {
+            "name": "proxy_ids",
+            "label": "选择代理",
+            "type": "proxy_multi_select",
+            "required": false,
+            "max_select": 5,
+            "description": "多选，每个环境关闭后随机使用一个代理进行环境更新。单次最多选5个"
+        },
+        {
+            "name": "video_group",
+            "label": "选择视频组",
+            "type": "video_group_select",
+            "required": true,
+            "description": "从视频管理中按所属网站选择视频组"
+        },
+        {
+            "name": "video_ids",
+            "label": "选择视频",
+            "type": "video_multi_select",
+            "required": true,
+            "description": "根据所选视频组列出所有该网站的视频，可多选"
+        },
+        {
+            "name": "exec_count_type",
+            "label": "执行次数类型",
+            "type": "select",
+            "required": true,
+            "default": "total",
+            "options": [
+                {"value": "total", "label": "总和次数"},
+                {"value": "per_env", "label": "单环境次数"}
+            ],
+            "description": "从浏览器开启到关闭视为执行1次"
+        },
+        {
+            "name": "exec_count",
+            "label": "执行次数",
+            "type": "number",
+            "required": true,
+            "default": 10,
+            "placeholder": "执行的次数",
+            "description": "达到执行次数后，脚本运行完成"
+        }
+    ]
+}

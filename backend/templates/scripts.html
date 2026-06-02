@@ -1,0 +1,581 @@
+{% extends "base.html" %}
+{% block title %}脚本管理 - Ads Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>🤖 脚本管理</h1>
+    <p class="text-muted">管理和执行内置脚本</p>
+</div>
+
+<!-- 选项卡：标准脚本 / 组合脚本 -->
+<div class="tabs">
+    <button class="tab-btn active" onclick="switchScriptTab('standard')">📋 标准脚本</button>
+    <button class="tab-btn" onclick="switchScriptTab('combo')">🔗 组合脚本</button>
+</div>
+
+<!-- ===== 标准脚本 ===== -->
+<div class="tab-content active" id="tab-standard">
+    <div id="standard-script-list" class="script-grid">
+        <p class="text-muted" style="padding:40px;text-align:center;">加载中...</p>
+    </div>
+</div>
+
+<!-- ===== 组合脚本 ===== -->
+<div class="tab-content" id="tab-combo">
+    <div id="combo-script-list" class="script-grid">
+        <p class="text-muted" style="padding:40px;text-align:center;">加载中...</p>
+    </div>
+</div>
+
+<!-- ===== 执行参数确认弹窗 ===== -->
+<div class="modal" id="param-modal">
+    <div class="modal-content" style="max-width:650px;">
+        <span class="modal-close" onclick="closeParamModal()">&times;</span>
+        <h2 id="param-modal-title">配置参数</h2>
+        <p class="text-muted" style="font-size:13px;margin-bottom:12px;" id="param-modal-desc">请确认以下参数后执行</p>
+        <form id="param-form" onsubmit="submitScriptWithParams(event)">
+            <input type="hidden" name="script_name" value="">
+            <input type="hidden" name="script_type" value="">
+            <div id="param-fields-container"></div>
+            <div class="form-group">
+                <label>任务名称 <span style="color:var(--error)">*</span></label>
+                <input type="text" name="task_name" placeholder="为该次执行命名，便于后续查看" required>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+                <button type="button" class="btn btn-secondary" onclick="closeParamModal()">取消</button>
+                <button type="submit" class="btn btn-primary" id="param-submit-btn">🚀 确认执行</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ===== 执行结果弹窗 ===== -->
+<div class="modal" id="result-modal">
+    <div class="modal-content" style="max-width:700px;max-height:80vh;">
+        <span class="modal-close" onclick="closeResultModal()">&times;</span>
+        <h2 id="result-modal-title">📋 执行结果</h2>
+        <div id="result-content" style="max-height:55vh;overflow-y:auto;">
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+            <button class="btn btn-secondary" onclick="closeResultModal()">关闭</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ===== 选项卡切换 =====
+function switchScriptTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelector(`.tab-btn[onclick*="'${tab}'"]`).classList.add('active');
+    document.getElementById(`tab-${tab}`).classList.add('active');
+    loadScriptList(tab);
+}
+
+// ===== 加载脚本列表 =====
+function loadScriptList(type) {
+    const container = document.getElementById(`${type}-script-list`);
+    container.innerHTML = '<p class="text-muted" style="padding:40px;text-align:center;">加载中...</p>';
+
+    fetch(`/api/scripts/list?type=${type}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.code !== 0 || !data.data || data.data.length === 0) {
+                container.innerHTML = '<p class="text-muted" style="padding:60px;text-align:center;font-size:15px;">📂 暂无可用脚本</p>';
+                return;
+            }
+            container.innerHTML = data.data.map(s => {
+                const hasParams = s.params && s.params.length > 0;
+                return `
+                    <div class="script-card">
+                        <div class="script-card-header">
+                            <div>
+                                <span class="script-name">${escapeHtml(s.display_name)}</span>
+                                <span class="badge badge-info">${escapeHtml(s.category)}</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm" onclick="openParamModal('${escapeHtml(s.script_name)}', '${escapeHtml(s.display_name)}', '${type}')">
+                                🚀 执行
+                            </button>
+                        </div>
+                        <p class="script-desc">${escapeHtml(s.description)}</p>
+                        ${hasParams ? `
+                        <div class="script-params">
+                            <span class="params-label">参数:</span>
+                            ${s.params.map(p => `<span class="env-tag">${escapeHtml(p.label)}${p.required ? '<span style="color:var(--error)">*</span>' : ''}</span>`).join('')}
+                        </div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        })
+        .catch(e => {
+            container.innerHTML = `<p class="text-muted" style="padding:40px;text-align:center;">❌ 加载失败: ${e.message}</p>`;
+        });
+}
+
+// ===== 参数弹窗 =====
+let currentScriptName = '';
+let currentScriptType = '';
+let currentScriptParams = [];
+
+function openParamModal(scriptName, displayName, scriptType) {
+    currentScriptName = scriptName;
+    currentScriptType = scriptType;
+
+    document.getElementById('param-modal-title').textContent = `🚀 执行: ${displayName}`;
+    document.getElementById('param-modal-desc').textContent = '请填写/确认参数后执行';
+    document.querySelector('#param-form [name="script_name"]').value = scriptName;
+    document.querySelector('#param-form [name="script_type"]').value = scriptType;
+    document.querySelector('#param-form [name="task_name"]').value = `执行${displayName}_${new Date().toLocaleTimeString()}`;
+    document.getElementById('param-submit-btn').disabled = false;
+    document.getElementById('param-submit-btn').textContent = '🚀 确认执行';
+
+    fetch(`/api/scripts/${scriptName}/info`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.code !== 0) {
+                document.getElementById('param-fields-container').innerHTML = `<p class="text-muted">❌ ${data.msg}</p>`;
+                return;
+            }
+            const params = data.data.params || [];
+            currentScriptParams = params;
+
+            if (params.length === 0) {
+                document.getElementById('param-fields-container').innerHTML = '<p class="text-muted">该脚本无需参数，点击确认直接执行</p>';
+            } else {
+                document.getElementById('param-fields-container').innerHTML = params.map(p => {
+                    let inputHtml = '';
+                    if (p.type === 'select' && p.options) {
+                        const options = p.options.map(o =>
+                            `<option value="${escapeHtml(o.value)}" ${o.value === (p.default || '') ? 'selected' : ''}>${escapeHtml(o.label)}</option>`
+                        ).join('');
+                        inputHtml = `<select name="param_${p.name}">${options}</select>`;
+                    } else if (p.type === 'env_select') {
+                        inputHtml = `
+                            <div class="env-select-wrapper">
+                                <input type="text" class="env-select-search" placeholder="🔍 搜索环境名称或ID..."
+                                    oninput="debounceSearchEnv(this, 'param_${p.name}')"
+                                    style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);margin-bottom:6px;">
+                                <select name="param_${p.name}" size="6" required
+                                    style="width:100%;padding:6px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);font-size:13px;"
+                                    ondblclick="loadMoreEnvs(this)">
+                                    <option value="">-- 加载中... --</option>
+                                </select>
+                                <div style="display:flex;justify-content:space-between;margin-top:4px;">
+                                    <small class="text-muted" id="env-select-count">加载中...</small>
+                                    <button type="button" class="btn btn-sm btn-secondary" id="env-load-more-btn"
+                                        style="display:none;font-size:11px;padding:2px 8px;"
+                                        onclick="loadMoreEnvs(document.querySelector('select[name=\\\\'param_${p.name}\\\\']'))">加载更多</button>
+                                </div>
+                            </div>`;
+                        setTimeout(() => loadEnvOptions('param_' + p.name, '', 1), 100);
+                    } else if (p.type === 'env_multi_select') {
+                        // 多选环境
+                        inputHtml = `
+                            <div class="env-multi-select-wrapper">
+                                <input type="text" class="env-select-search" placeholder="🔍 搜索环境..."
+                                    oninput="debounceSearchEnv(this, 'param_${p.name}')"
+                                    style="width:100%;padding:8px 12px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);margin-bottom:6px;">
+                                <div class="env-multi-select-box" id="env-multi-${p.name}" style="max-height:200px;overflow-y:auto;border:1px solid var(--border-color);border-radius:4px;padding:4px;background:var(--bg-primary);">
+                                    <label style="display:block;padding:6px;color:var(--text-muted);font-size:13px;">加载中...</label>
+                                </div>
+                                <small class="text-muted" id="env-multi-count-${p.name}">加载中...</small>
+                                <button type="button" class="btn btn-sm btn-secondary" style="display:none;font-size:11px;padding:2px 8px;margin-top:4px;" id="env-multi-more-${p.name}" onclick="loadMoreMultiEnvs('${p.name}')">加载更多</button>
+                            </div>`;
+                        setTimeout(() => loadMultiEnvOptions(p.name, '', 1, p.name), 100);
+                    } else if (p.type === 'proxy_multi_select') {
+                        // 多选代理
+                        const maxSel = p.max_select || 5;
+                        inputHtml = `
+                            <div class="proxy-multi-select-wrapper">
+                                <div class="proxy-multi-select-box" id="proxy-multi-${p.name}" style="max-height:200px;overflow-y:auto;border:1px solid var(--border-color);border-radius:4px;padding:4px;background:var(--bg-primary);">
+                                    <label style="display:block;padding:6px;color:var(--text-muted);font-size:13px;">加载中...</label>
+                                </div>
+                                <small class="text-muted" id="proxy-multi-count-${p.name}">最多选 ${maxSel} 个</small>
+                            </div>`;
+                        setTimeout(() => loadMultiProxyOptions(p.name, maxSel), 200);
+                    } else if (p.type === 'video_group_select') {
+                        // 视频组选择（按网站分组）
+                        inputHtml = `<select name="param_${p.name}" onchange="onVideoGroupChange(this, '${p.name}')" required>
+                            <option value="">-- 加载中... --</option>
+                        </select>`;
+                        setTimeout(() => loadVideoGroupOptions('param_' + p.name), 100);
+                    } else if (p.type === 'video_multi_select') {
+                        // 多选视频
+                        inputHtml = `
+                            <div class="video-multi-select-wrapper">
+                                <div class="video-multi-select-box" id="video-multi-${p.name}" style="max-height:200px;overflow-y:auto;border:1px solid var(--border-color);border-radius:4px;padding:4px;background:var(--bg-primary);">
+                                    <label style="display:block;padding:6px;color:var(--text-muted);font-size:13px;">请先选择视频组</label>
+                                </div>
+                            </div>`;
+                    } else if (p.type === 'number') {
+                        inputHtml = `<input type="number" name="param_${p.name}" value="${p.default || ''}" ${p.required ? 'required' : ''}>`;
+                    } else {
+                        inputHtml = `<input type="text" name="param_${p.name}" value="${escapeHtml(p.default || '')}" placeholder="${escapeHtml(p.placeholder || '')}" ${p.required ? 'required' : ''}>`;
+                    }
+                    return `
+                        <div class="form-group">
+                            <label>${escapeHtml(p.label)} ${p.required ? '<span style="color:var(--error)">*</span>' : ''}</label>
+                            ${inputHtml}
+                            ${p.description ? `<small style="color:var(--text-muted);">${escapeHtml(p.description)}</small>` : ''}
+                        </div>
+                    `;
+                }).join('');
+            }
+            document.getElementById('param-modal').style.display = 'flex';
+        })
+        .catch(e => {
+            document.getElementById('param-fields-container').innerHTML = `<p class="text-muted">❌ 加载失败: ${e.message}</p>`;
+        });
+}
+
+function closeParamModal() {
+    document.getElementById('param-modal').style.display = 'none';
+}
+
+// ===== 查看执行日志 =====
+function showExecutionResult(data) {
+    const result = data.data || {};
+    const executionId = result.execution_id;
+    const results = result.results || [];
+    const successCount = result.success_count || 0;
+    const total = result.total || 0;
+
+    let html = `<div class="result-summary">
+        <p>执行ID: <code>${escapeHtml(executionId)}</code></p>
+        <p>结果: <strong>${successCount}/${total} 成功</strong></p>
+    </div>`;
+
+    if (results.length > 0) {
+        html += `<table class="data-table">
+            <thead><tr><th>线程</th><th>环境ID</th><th>状态</th><th>错误信息</th></tr></thead>
+            <tbody>
+                ${results.map(r => `
+                    <tr>
+                        <td>#${r.thread_index + 1}</td>
+                        <td>${r.profile_id ? escapeHtml(r.profile_id.substring(0,12)) + '...' : '-'}</td>
+                        <td><span class="badge ${r.success ? 'badge-success' : 'badge-error'}">${r.success ? '✅ 成功' : '❌ 失败'}</span></td>
+                        <td style="color:var(--error);">${escapeHtml(r.error || '-')}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>`;
+    }
+
+    html += `<div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn btn-sm btn-secondary" onclick="viewExecutionLog('${executionId}')">📋 查看日志</button>
+    </div>`;
+
+    document.getElementById('result-modal-title').textContent = '📋 执行结果';
+    document.getElementById('result-content').innerHTML = html;
+    document.getElementById('result-modal').style.display = 'flex';
+}
+
+function closeResultModal() {
+    document.getElementById('result-modal').style.display = 'none';
+}
+
+// ===== 查看执行日志 =====
+async function viewExecutionLog(executionId) {
+    const resp = await fetch(`/api/scripts/log/${executionId}`);
+    const data = await resp.json();
+    if (data.code !== 0) {
+        showToast('获取日志失败: ' + data.msg, 'error');
+        return;
+    }
+
+    const logs = data.data || [];
+    let html = logs.map(l => {
+        let icon = 'ℹ️';
+        if (l.step_type === 'success') icon = '✅';
+        else if (l.step_type === 'error') icon = '❌';
+        else if (l.step_type === 'warning') icon = '⚠️';
+        else if (l.step_type === 'api_call') icon = '🔗';
+        else if (l.step_type === 'start') icon = '▶️';
+        else if (l.step_type === 'end') icon = '🏁';
+        const time = l.created_at ? l.created_at.substr(11, 8) : '';
+        const profileTag = l.profile_id ? ` <span style="color:var(--accent);">[${escapeHtml(l.profile_id.substr(0,12))}]</span>` : '';
+        return `<div style="padding:2px 0;">[${time}] ${icon}${profileTag} ${escapeHtml(l.message)}</div>`;
+    }).join('') || '<p class="text-muted">暂无日志</p>';
+
+    document.getElementById('result-modal-title').textContent = `📋 日志: ${executionId}`;
+    document.getElementById('result-content').innerHTML = `<div class="log-viewer">${html}</div>`;
+    document.getElementById('result-modal').style.display = 'flex';
+}
+
+// ===== 环境选择器（搜索 + 分页） =====
+var envSearchTimers = {};
+
+function debounceSearchEnv(input, selectName) {
+    var key = selectName || 'default';
+    if (envSearchTimers[key]) clearTimeout(envSearchTimers[key]);
+    envSearchTimers[key] = setTimeout(function() {
+        loadEnvOptions(selectName, input.value.trim(), 1);
+    }, 300);
+}
+
+async function loadEnvOptions(selectName, keyword, page) {
+    var select = document.querySelector('select[name="' + selectName + '"]');
+    var countEl = document.getElementById('env-select-count');
+    var loadMoreBtn = document.getElementById('env-load-more-btn');
+    if (!select) return;
+    if (page === 1) select.innerHTML = '<option value="">-- 加载中... --</option>';
+    try {
+        var resp = await fetch('/api/env/list?limit=50&page=' + page);
+        var data = await resp.json();
+        if (data.code !== 0 || !data.data) {
+            select.innerHTML = '<option value="">❌ ' + (data.msg || '加载失败') + '</option>';
+            if (countEl) countEl.textContent = '加载失败';
+            return;
+        }
+        var profiles = data.data.list || [];
+        var total = data.data.total_count || 0;
+        if (page === 1) select.innerHTML = '';
+        // 客户端过滤（API 不一定支持 keyword）
+        var filtered = profiles;
+        if (keyword) {
+            var kw = keyword.toLowerCase();
+            filtered = profiles.filter(function(p) {
+                return (p.name || '').toLowerCase().indexOf(kw) >= 0 ||
+                       (p.profile_id || '').toLowerCase().indexOf(kw) >= 0 ||
+                       (p.profile_no || '').toString().indexOf(kw) >= 0;
+            });
+        }
+        if (filtered.length === 0 && page === 1) {
+            select.innerHTML = '<option value="">-- 无匹配环境 --</option>';
+            if (countEl) countEl.textContent = '0 个环境';
+            if (loadMoreBtn) loadMoreBtn.style.display = 'none';
+            return;
+        }
+        filtered.forEach(function(p) {
+            var opt = document.createElement('option');
+            opt.value = p.profile_id;
+            var name = p.name || '(无名称)';
+            var no = p.profile_no || '';
+            opt.textContent = '[' + no + '] ' + name + ' (' + p.profile_id + ')';
+            select.appendChild(opt);
+        });
+        var loadedCount = (page - 1) * 50 + filtered.length;
+        if (countEl) countEl.textContent = loadedCount + ' / ' + total + ' 个环境';
+        var hasMore = (page * 50) < total;
+        if (loadMoreBtn) {
+            loadMoreBtn.style.display = hasMore ? 'inline-block' : 'none';
+            loadMoreBtn.dataset.page = page + 1;
+            loadMoreBtn.dataset.keyword = keyword;
+        }
+    } catch(e) {
+        select.innerHTML = '<option value="">❌ ' + e.message + '</option>';
+    }
+}
+
+function loadMoreEnvs() {
+    var loadMoreBtn = document.getElementById('env-load-more-btn');
+    if (!loadMoreBtn) return;
+    var page = parseInt(loadMoreBtn.dataset.page) || 2;
+    var keyword = loadMoreBtn.dataset.keyword || '';
+    var selectName = (document.querySelector('select.env-select') || {}).name || '';
+    if (!selectName) {
+        var selects = document.querySelectorAll('select[size="6"]');
+        if (selects.length > 0) selectName = selects[0].name;
+    }
+    loadEnvOptions(selectName, keyword, page);
+}
+
+// ===== 多选环境加载（env_multi_select）=====
+var multiEnvData = {};
+async function loadMultiEnvOptions(paramName, keyword, page, dataKey) {
+    var container = document.getElementById('env-multi-' + paramName);
+    var countEl = document.getElementById('env-multi-count-' + paramName);
+    var moreBtn = document.getElementById('env-multi-more-' + paramName);
+    if (!container) return;
+    if (page === 1) container.innerHTML = '<label style="display:block;padding:6px;color:var(--text-muted);font-size:13px;">加载中...</label>';
+    try {
+        var resp = await fetch('/api/env/list?limit=100&page=' + page);
+        var data = await resp.json();
+        if (data.code !== 0 || !data.data) {
+            container.innerHTML = '<label style="display:block;padding:6px;color:var(--error);font-size:13px;">❌ ' + (data.msg || '加载失败') + '</label>';
+            return;
+        }
+        var profiles = data.data.list || [];
+        var total = data.data.total_count || 0;
+        if (!multiEnvData[dataKey]) multiEnvData[dataKey] = {};
+        if (page === 1) multiEnvData[dataKey] = {};
+        profiles.forEach(function(p) {
+            var pid = p.profile_id;
+            var label = '[' + (p.profile_no || '') + '] ' + (p.name || '(无名称)') + ' (' + pid + ')';
+            multiEnvData[dataKey][pid] = label;
+        });
+        renderMultiEnvCheckboxes(paramName, dataKey, keyword);
+        var loadedCount = Object.keys(multiEnvData[dataKey]).length;
+        if (countEl) countEl.textContent = loadedCount + ' / ' + total + ' 个环境';
+        var hasMore = loadedCount < total;
+        if (moreBtn) {
+            moreBtn.style.display = hasMore ? 'inline-block' : 'none';
+            moreBtn.dataset.page = page + 1;
+            moreBtn.dataset.keyword = keyword;
+        }
+    } catch(e) {
+        container.innerHTML = '<label style="display:block;padding:6px;color:var(--error);font-size:13px;">❌ ' + e.message + '</label>';
+    }
+}
+
+function renderMultiEnvCheckboxes(paramName, dataKey, keyword) {
+    var container = document.getElementById('env-multi-' + paramName);
+    if (!container) return;
+    var entries = Object.entries(multiEnvData[dataKey] || {});
+    if (keyword) {
+        var kw = keyword.toLowerCase();
+        entries = entries.filter(function(e) { return e[1].toLowerCase().indexOf(kw) >= 0; });
+    }
+    container.innerHTML = entries.map(function(e) {
+        return '<label style="display:flex;align-items:center;gap:6px;padding:4px 6px;cursor:pointer;border-radius:4px;hover:background:var(--bg-hover);font-size:13px;">' +
+            '<input type="checkbox" name="param_' + paramName + '" value="' + e[0] + '"> ' +
+            escapeHtml(e[1]) +
+        '</label>';
+    }).join('') || '<label style="display:block;padding:6px;color:var(--text-muted);font-size:13px;">无匹配环境</label>';
+}
+
+function loadMoreMultiEnvs(dataKey) {
+    var moreBtn = document.getElementById('env-multi-more-' + dataKey);
+    if (!moreBtn) return;
+    var page = parseInt(moreBtn.dataset.page) || 2;
+    var keyword = moreBtn.dataset.keyword || '';
+    loadMultiEnvOptions(dataKey, keyword, page, dataKey);
+}
+
+// ===== 多选代理加载（proxy_multi_select）=====
+var multiProxyChecked = {};
+async function loadMultiProxyOptions(paramName, maxSelect) {
+    var container = document.getElementById('proxy-multi-' + paramName);
+    var countEl = document.getElementById('proxy-multi-count-' + paramName);
+    if (!container) return;
+    try {
+        var resp = await fetch('/api/config/proxy');
+        var data = await resp.json();
+        if (data.code !== 0) {
+            container.innerHTML = '<label style="display:block;padding:6px;color:var(--error);font-size:13px;">❌ ' + (data.msg || '加载失败') + '</label>';
+            return;
+        }
+        var proxies = data.data || [];
+        container.innerHTML = proxies.map(function(p) {
+            return '<label style="display:flex;align-items:center;gap:6px;padding:4px 6px;cursor:pointer;border-radius:4px;font-size:13px;">' +
+                '<input type="checkbox" name="param_' + paramName + '" value="' + p.id + '" onchange="limitMultiProxySelect(\'' + paramName + '\', ' + maxSelect + ')"> ' +
+                escapeHtml(p.name || p.proxy_host || ('代理#' + p.id)) + ' (' + escapeHtml(p.proxy_soft || '-') + ')' +
+            '</label>';
+        }).join('') || '<label style="display:block;padding:6px;color:var(--text-muted);font-size:13px;">暂无代理</label>';
+    } catch(e) {
+        container.innerHTML = '<label style="display:block;padding:6px;color:var(--error);font-size:13px;">❌ ' + e.message + '</label>';
+    }
+}
+
+function limitMultiProxySelect(paramName, maxSelect) {
+    var checkboxes = document.querySelectorAll('input[name="param_' + paramName + '"]');
+    var checked = [];
+    checkboxes.forEach(function(cb) { if (cb.checked) checked.push(cb); });
+    if (checked.length > maxSelect) {
+        checked[checked.length - 1].checked = false;
+        showToast('最多只能选择 ' + maxSelect + ' 个代理', 'warning');
+    }
+}
+
+// ===== 视频组选择（video_group_select）=====
+async function loadVideoGroupOptions(selectName) {
+    var select = document.querySelector('select[name="' + selectName + '"]');
+    if (!select) return;
+    try {
+        var resp = await fetch('/api/videos/websites');
+        var data = await resp.json();
+        if (data.code === 0) {
+            select.innerHTML = '<option value="">-- 请选择 --</option>';
+            (data.data || []).forEach(function(s) {
+                var opt = document.createElement('option');
+                opt.value = s;
+                opt.textContent = s;
+                select.appendChild(opt);
+            });
+        }
+        if (select.options.length <= 1) {
+            select.innerHTML = '<option value="">暂无视频分组</option>';
+        }
+    } catch(e) {
+        select.innerHTML = '<option value="">❌ 加载失败</option>';
+    }
+}
+
+// 视频组变更时加载视频
+function onVideoGroupChange(select, paramName) {
+    var website = select.value;
+    var videoContainer = document.getElementById('video-multi-' + paramName);
+    if (!videoContainer) return;
+    if (!website) {
+        videoContainer.innerHTML = '<label style="display:block;padding:6px;color:var(--text-muted);font-size:13px;">请先选择视频组</label>';
+        return;
+    }
+    videoContainer.innerHTML = '<label style="display:block;padding:6px;color:var(--text-muted);font-size:13px;">加载中...</label>';
+    fetch('/api/videos?keyword=&account_name=')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.code !== 0) {
+                videoContainer.innerHTML = '<label style="display:block;padding:6px;color:var(--error);font-size:13px;">❌ 加载失败</label>';
+                return;
+            }
+            var filtered = (data.data || []).filter(function(v) { return v.website === website; });
+            if (filtered.length === 0) {
+                videoContainer.innerHTML = '<label style="display:block;padding:6px;color:var(--text-muted);font-size:13px;">该网站下暂无视频</label>';
+                return;
+            }
+            videoContainer.innerHTML = filtered.map(function(v) {
+                return '<label style="display:flex;align-items:center;gap:6px;padding:4px 6px;cursor:pointer;border-radius:4px;font-size:13px;">' +
+                    '<input type="checkbox" name="param_' + paramName + '" value="' + v.id + '"> ' +
+                    escapeHtml(v.video_name) +
+                '</label>';
+            }).join('');
+        })
+        .catch(function(e) {
+            videoContainer.innerHTML = '<label style="display:block;padding:6px;color:var(--error);font-size:13px;">❌ ' + e.message + '</label>';
+        });
+}
+
+// ===== 提交执行（增强）=====
+async function submitScriptWithParams(e) {
+    e.preventDefault();
+    const form = document.getElementById('param-form');
+    const fd = new FormData(form);
+    const scriptName = fd.get('script_name');
+    const taskName = fd.get('task_name');
+
+    const params = {};
+    currentScriptParams.forEach(function(p) {
+        if (p.type === 'env_multi_select' || p.type === 'proxy_multi_select' || p.type === 'video_multi_select') {
+            // 多选类型：收集所有 checked 的 checkbox 值
+            var checkboxes = document.querySelectorAll('input[name="param_' + p.name + '"]:checked');
+            var vals = [];
+            checkboxes.forEach(function(cb) { vals.push(cb.value); });
+            if (vals.length > 0) params[p.name] = vals.join(',');
+        } else {
+            const val = fd.get('param_' + p.name);
+            if (val !== null && val !== '') params[p.name] = val;
+        }
+    });
+
+    document.getElementById('param-submit-btn').disabled = true;
+
+    document.getElementById('param-submit-btn').textContent = '⏳ 执行中...';
+
+    const resp = await fetch(`/api/scripts/${scriptName}/run`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({params: params, task_name: taskName})
+    });
+    const data = await resp.json();
+    closeParamModal();
+    showToast(data.msg, data.code === 0 ? 'success' : 'error');
+    showExecutionResult(data);
+}
+
+// ===== 初始化 =====
+document.addEventListener('DOMContentLoaded', () => loadScriptList('standard'));
+</script>
+{% endblock %}

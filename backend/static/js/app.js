@@ -60,9 +60,51 @@ async function apiPost(url, body = {}) {
     }
 }
 
+// ---- 模态框管理 ----
+function openModal(id) {
+    document.getElementById(id).style.display = 'flex';
+}
+function closeModal(id) {
+    document.getElementById(id).style.display = 'none';
+}
+
 // ---- 模态框关闭（点击背景关闭） ----
 document.addEventListener('click', function(e) {
     if (e.target.classList.contains('modal')) {
         e.target.style.display = 'none';
     }
 });
+
+// ---- API 状态检查（所有页面共用） ----
+async function checkApiStatus() {
+    try {
+        const resp = await fetch('/api/status');
+        const data = await resp.json();
+        if (data.code === 0) {
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
+            if (!dot || !text) return;
+            if (!data.data.api_key_ok) {
+                dot.style.color = '#f97316';
+                text.textContent = 'API 未配置';
+                text.title = '请到配置管理填写 API Key';
+            } else if (data.data.adspower_ok) {
+                dot.style.color = '#4ade80';
+                text.textContent = 'API 正常';
+                text.title = '';
+            } else {
+                dot.style.color = '#f87171';
+                text.textContent = 'API 异常';
+                text.title = 'AdsPower 可能未启动，请检查';
+            }
+        }
+    } catch(e) {
+        const dot = document.getElementById('status-dot');
+        const text = document.getElementById('status-text');
+        if (dot) dot.style.color = '#f87171';
+        if (text) text.textContent = '连接失败';
+    }
+}
+// 页面加载后立即检查，之后每30秒刷新
+document.addEventListener('DOMContentLoaded', checkApiStatus);
+setInterval(checkApiStatus, 30000);

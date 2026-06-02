@@ -41,9 +41,11 @@
 
 <!-- 操作按钮 -->
 <div class="action-bar">
-    <button class="btn btn-primary" onclick="runCheck()">🔍 执行初始化检查</button>
-    <button class="btn btn-secondary" onclick="processTasks()">⚡ 处理任务队列</button>
-    <button class="btn btn-warning" onclick="refreshDashboard()">🔄 刷新数据</button>
+    <div class="action-bar-left">
+        <button class="btn btn-primary" onclick="runCheck()">🔍 初始化</button>
+        <button class="btn btn-secondary" onclick="refreshDashboard()">🔄 刷新</button>
+        <button class="btn btn-warning" onclick="processTasks()">⚡ 处理任务队列</button>
+    </div>
 </div>
 
 <!-- 检查结果 -->
@@ -84,85 +86,81 @@
 <script>
 // ===== 仪表盘脚本 =====
 
-// 页面加载时刷新
-document.addEventListener('DOMContentLoaded', refreshDashboard);
+// 页面加载时从缓存加载（避免每次打开都请求 AdsPower）
+document.addEventListener('DOMContentLoaded', loadFromCache);
 
-// 检查 API 状态
-async function checkApiStatus() {
+// 从缓存加载仪表盘数据
+async function loadFromCache() {
     try {
-        const resp = await fetch('/api/status');
-        const data = await resp.json();
-        if (data.code === 0) {
-            const dot = document.getElementById('status-dot');
-            const text = document.getElementById('status-text');
-            if (data.data.adspower_ok) {
-                dot.style.color = '#4ade80';
-                text.textContent = 'API 正常';
-            } else {
-                dot.style.color = '#f87171';
-                text.textContent = 'API 异常';
-            }
+        var cacheResp = await fetch('/api/env/cache/data');
+        var cacheData = await cacheResp.json();
+        if (cacheData.code === 0) {
+            var envs = cacheData.data.profiles || [];
+            var actives = cacheData.data.active_profiles || [];
+            document.getElementById('stat-envs').textContent = envs.length + (envs.length > 0 ? '' : '');
+            document.getElementById('stat-active').textContent = actives.length;
+            renderActiveProfiles(actives);
         }
-    } catch(e) {
-        document.getElementById('status-dot').style.color = '#f87171';
-        document.getElementById('status-text').textContent = '连接失败';
-    }
-}
-setInterval(checkApiStatus, 30000);
-checkApiStatus();
-
-// 刷新仪表盘数据
-async function refreshDashboard() {
+    } catch(e) { /* ignore - stat stays as "--" */ }
+    // 状态信息从 /api/status 获取（轻量请求）
     try {
-        // 并行请求
-        const [checkResp, tasksResp, activeResp, logsResp] = await Promise.all([
-            fetch('/api/env/check'),
-            fetch('/api/env/tasks?status=pending'),
-            fetch('/api/env/browser/local-active'),
-            fetch('/api/logs/operation?limit=10'),
-        ]);
-
-        const checkData = await checkResp.json();
-        const tasksData = await tasksResp.json();
-        const activeData = await activeResp.json();
-        const logsData = await logsResp.json();
-
-        // 更新状态卡片
-        if (checkData.code === 0) {
-            document.getElementById('stat-api').textContent = checkData.data.api_ok ? '✅ 正常' : '❌ 异常';
-            document.getElementById('stat-api').style.color = checkData.data.api_ok ? '#4ade80' : '#f87171';
-            document.getElementById('stat-envs').textContent = checkData.data.total_profiles;
-            document.getElementById('stat-active').textContent = checkData.data.active_profiles?.length || 0;
+        var statusResp = await fetch('/api/status');
+        var statusData = await statusResp.json();
+        if (statusData.code === 0) {
+            var s = statusData.data;
+            var apiText = '', apiColor = '';
+            if (!s.api_key_ok) { apiText = '⚠️ 未配置'; apiColor = '#f97316'; }
+            else if (s.adspower_ok) { apiText = '✅ 正常'; apiColor = '#4ade80'; }
+            else { apiText = '❌ 异常'; apiColor = '#f87171'; }
+            document.getElementById('stat-api').textContent = apiText;
+            document.getElementById('stat-api').style.color = apiColor;
         }
+    } catch(e) { /* ignore */ }
+    // 任务数量
+    try {
+        var tasksResp = await fetch('/api/env/tasks?status=pending');
+        var tasksData = await tasksResp.json();
         document.getElementById('stat-tasks').textContent = tasksData.data?.length || 0;
-
-        // 更新已启动环境列表
-        if (activeData.code === 0) {
-            const actives = activeData.data?.list || [];
-            const container = document.getElementById('active-profiles-list');
-            if (actives.length === 0) {
-                container.innerHTML = '<p class="text-muted">暂无已启动环境</p>';
-            } else {
-                container.innerHTML = actives.map(a => 
-                    `<div class="env-tag">${a.user_id || a.profile_id} ${a.name || ''}</div>`
-                ).join('');
-            }
+    } catch(e) { /* ignore */ }
+    // 最近日志
+    try {
+        var logsResp = await fetch('/api/logs/operation?limit=10');
+        var logsData = await logsResp.json();
+        var tbody = document.querySelector('#recent-logs-table tbody');
+        if (logsData.code === 0 && logsData.data && logsData.data.list) {
+            tbody.innerHTML = logsData.data.list.map(function(l) {
+                return '<tr>' +
+                    '<td>' + formatTime(l.created_at) + '</td>' +
+                    '<td><span class="badge badge-' + (l.level || '').toLowerCase() + '">' + (l.level || '') + '</span></td>' +
+                    '<td>' + (l.module || '') + '</td>' +
+                    '<td>' + escapeHtml(l.message) + '</td>' +
+                '</tr>';
+            }).join('') || '<tr><td colspan="4" class="text-center text-muted">暂无日志</td></tr>';
         }
+    } catch(e) { /* ignore */ }
+}
 
-        // 更新最近日志
-        const tbody = document.querySelector('#recent-logs-table tbody');
-        if (logsData.code === 0 && logsData.data.list) {
-            tbody.innerHTML = logsData.data.list.map(l => `
-                <tr>
-                    <td>${formatTime(l.created_at)}</td>
-                    <td><span class="badge badge-${l.level.toLowerCase()}">${l.level}</span></td>
-                    <td>${l.module}</td>
-                    <td>${escapeHtml(l.message)}</td>
-                </tr>
-            `).join('') || '<tr><td colspan="4" class="text-center text-muted">暂无日志</td></tr>';
-        }
-    } catch(e) {
-        console.error('刷新仪表盘失败:', e);
+// 刷新仪表盘（从 AdsPower 重新获取，用于"刷新"按钮）
+async function refreshDashboard() {
+    showToast('正在刷新数据...', 'info');
+    // 先刷新缓存
+    try {
+        await fetch('/api/env/cache/refresh', {method: 'POST'});
+    } catch(e) { /* ignore */ }
+    // 重新加载所有数据
+    await loadFromCache();
+    showToast('已刷新', 'success');
+}
+
+// 已启动环境渲染
+function renderActiveProfiles(actives) {
+    var container = document.getElementById('active-profiles-list');
+    if (!actives || actives.length === 0) {
+        container.innerHTML = '<p class="text-muted">暂无已启动环境</p>';
+    } else {
+        container.innerHTML = actives.map(function(a) {
+            return '<div class="env-tag">' + escapeHtml(a.user_id || a.profile_id) + ' ' + escapeHtml(a.name || '') + '</div>';
+        }).join('');
     }
 }
 
@@ -175,7 +173,7 @@ async function runCheck() {
         if (data.code === 0) {
             const d = data.data;
             let html = `
-                <p><strong>API:</strong> ${d.api_ok ? '✅ 正常' : '❌ 异常'} — ${d.api_message}</p>
+                <p><strong>API 连接:</strong> ${d.api_ok ? '✅ AdsPower 已连接' : '❌ AdsPower 未连接'}</p>
                 <p><strong>环境总数:</strong> ${d.total_profiles}</p>
                 <p><strong>保留环境:</strong> ${d.preserved_count}</p>
                 <p><strong>缺失保留:</strong> ${d.missing_preserved.length} (配置中有但实际不存在)</p>
@@ -193,6 +191,8 @@ async function runCheck() {
         } else {
             showToast('检查失败: ' + data.msg, 'error');
         }
+        // 检查后刷新缓存
+        try { await fetch('/api/env/cache/refresh', {method: 'POST'}); } catch(e) {}
         refreshDashboard();
     } catch(e) {
         showToast('检查异常: ' + e.message, 'error');

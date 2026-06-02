@@ -1,0 +1,432 @@
+{% extends "base.html" %}
+{% block title %}视频管理 - Ads Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>🎬 视频管理</h1>
+    <p class="text-muted">管理视频信息，支持按网站和账号分类</p>
+</div>
+
+<!-- 选项卡 -->
+<div class="tabs">
+    <button class="tab-btn active" onclick="switchVideoTab('manage')">📹 视频管理</button>
+    <button class="tab-btn" onclick="switchVideoTab('history')">📊 历史记录</button>
+</div>
+
+<!-- ===== 视频管理 ===== -->
+<div class="tab-content active" id="tab-video-manage">
+<div class="action-bar">
+    <div class="action-bar-left">
+        <button class="btn btn-primary" onclick="openAddVideoModal()">➕ 添加视频</button>
+        <button class="btn btn-secondary" onclick="loadVideos()">🔄 刷新</button>
+    </div>
+    <button class="btn-search" onclick="toggleVideoSearch()">🔍 搜索</button>
+</div>
+
+<!-- 可折叠搜索栏（改为下拉选择） -->
+<div id="video-search-panel" style="display:none;padding:12px;background:var(--bg-secondary);border-radius:var(--radius);margin-bottom:12px;">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="text" id="video-search-name" placeholder="视频名称" oninput="filterVideos()" style="padding:6px 10px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);width:160px;">
+        <select id="video-search-website" onchange="filterVideos()" style="padding:6px 10px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);">
+            <option value="">所有网站</option>
+        </select>
+        <select id="video-search-account" onchange="filterVideos()" style="padding:6px 10px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);">
+            <option value="">所有账号</option>
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="filterVideos()">搜索</button>
+        <button class="btn btn-sm btn-secondary" onclick="resetVideoSearch()">重置</button>
+    </div>
+</div>
+
+<div class="card">
+    <h3>视频列表 <span id="video-count" class="text-muted" style="font-weight:normal;font-size:14px;"></span></h3>
+    <div style="overflow-x:auto;">
+        <table class="data-table" id="video-table">
+            <thead>
+                <tr>
+                    <th>编号</th>
+                    <th>视频名称</th>
+                    <th>视频链接</th>
+                    <th>所属网站</th>
+                    <th>账号名称</th>
+                    <th>今日访问</th>
+                    <th>操作人</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td colspan="8" class="text-center text-muted">加载中...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 添加/编辑弹窗 -->
+<div class="modal" id="video-modal" style="display:none;">
+    <div class="modal-content">
+        <span class="modal-close" onclick="closeModal('video-modal')">&times;</span>
+        <h2 id="video-modal-title">添加视频</h2>
+        <form id="video-form" onsubmit="submitVideoForm(event)">
+            <input type="hidden" id="video-edit-id" value="">
+            <div class="form-group">
+                <label>视频名称 <span style="color:var(--error)">*</span></label>
+                <input type="text" id="video-name" placeholder="输入视频名称" required>
+            </div>
+            <div class="form-group">
+                <label>视频链接 <span style="color:var(--error)">*</span></label>
+                <input type="url" id="video-url" placeholder="https://example.com/video" required>
+            </div>
+            <div class="form-group">
+                <label>所属网站 <span style="color:var(--error)">*</span></label>
+                <select id="video-website" required>
+                    <option value="">-- 请选择 --</option>
+                </select>
+                <div id="video-website-custom-group" style="display:none;margin-top:6px;">
+                    <input type="text" id="video-website-custom" placeholder="输入自定义网站名称" style="padding:6px 10px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);width:100%;">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>账号名称</label>
+                <input type="text" id="video-account-name" placeholder="管理此视频所使用的账号">
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('video-modal')">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ===== 历史记录 ===== -->
+<div class="tab-content" id="tab-video-history">
+    <div class="action-bar">
+        <div class="action-bar-left">
+            <button class="btn btn-secondary" onclick="loadVideoHistory()">🔄 刷新</button>
+        </div>
+    </div>
+    <div class="card">
+        <h3>每日访问统计 <span id="history-count" class="text-muted" style="font-weight:normal;font-size:14px;"></span></h3>
+        <div style="overflow-x:auto;">
+            <table class="data-table" id="history-table">
+                <thead>
+                    <tr>
+                        <th>日期</th>
+                        <th>视频名称</th>
+                        <th>所属网站</th>
+                        <th>独立访问</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="4" class="text-center text-muted">暂无数据</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <!-- 分页 -->
+        <div class="pagination" id="history-pagination" style="display:none;margin-top:16px;">
+            <span id="history-page-info"></span>
+            <button class="btn btn-sm btn-secondary" id="history-prev-btn" onclick="changeHistoryPage(-1)">← 上一页</button>
+            <button class="btn btn-sm btn-secondary" id="history-next-btn" onclick="changeHistoryPage(1)">下一页 →</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var videoEditId = null;
+
+async function loadVideos() {
+    var resp = await fetch('/api/videos');
+    var data = await resp.json();
+    var tbody = document.querySelector('#video-table tbody');
+    if (data.code === 0) {
+        var html = '';
+        for (var i = 0; i < data.data.length; i++) {
+            var v = data.data[i];
+            html += '<tr>' +
+                '<td>' + v.id + '</td>' +
+                '<td>' + escapeHtml(v.video_name) + '</td>' +
+                '<td><a href="' + escapeHtml(v.video_url) + '" target="_blank" style="color:var(--accent);font-size:13px;">' + escapeHtml(v.video_url.substring(0, 50)) + (v.video_url.length > 50 ? '…' : '') + '</a></td>' +
+                '<td>' + escapeHtml(v.website || '-') + '</td>' +
+                '<td>' + escapeHtml(v.account_name || '-') + '</td>' +
+                '<td><strong>' + v.today_visits + '</strong></td>' +
+                '<td>' + escapeHtml(v.operator || '-') + '</td>' +
+                '<td><div class="action-buttons">' +
+                    '<button class="btn-sm btn-edit" onclick="openEditVideoModal(' + v.id + ')">编辑</button>' +
+                    '<button class="btn-danger-sm" onclick="deleteVideo(' + v.id + ')">删除</button>' +
+                '</div></td>' +
+            '</tr>';
+        }
+        tbody.innerHTML = html || '<tr><td colspan="8" class="text-center text-muted">暂无视频</td></tr>';
+    }
+}
+
+/** 加载网站选项（从 config 和已有视频数据合并） */
+async function loadWebsiteOptions() {
+    var select = document.getElementById('video-website');
+    // 从已有视频中获取去重的网站列表
+    var websites = [];
+    try {
+        var resp = await fetch('/api/videos/websites');
+        var data = await resp.json();
+        if (data.code === 0) websites = data.data || [];
+    } catch(e) {}
+    // 从 config 中获取预置网站
+    try {
+        var configResp = await fetch('/api/config/general');
+        var configData = await configResp.json();
+        if (configData.code === 0) {
+            for (var i = 0; i < configData.data.length; i++) {
+                if (configData.data[i].config_key === 'video_websites') {
+                    var presetSites = (configData.data[i].config_value || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+                    presetSites.forEach(function(s) { if (websites.indexOf(s) < 0) websites.push(s); });
+                    break;
+                }
+            }
+        }
+    } catch(e) {}
+    websites.sort();
+    websites.forEach(function(s) {
+        var opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = s;
+        select.appendChild(opt);
+    });
+    var opt = document.createElement('option');
+    opt.value = '__custom__';
+    opt.textContent = '其他（手动输入）';
+    select.appendChild(opt);
+}
+
+/** 加载搜索下拉选项 */
+async function loadSearchOptions() {
+    // 加载网站下拉
+    var webSelect = document.getElementById('video-search-website');
+    var wsResp = await fetch('/api/videos/websites');
+    var wsData = await wsResp.json();
+    if (wsData.code === 0) {
+        (wsData.data || []).forEach(function(s) {
+            var opt = document.createElement('option');
+            opt.value = s;
+            opt.textContent = s;
+            webSelect.appendChild(opt);
+        });
+    }
+    // 加载账号下拉
+    var accSelect = document.getElementById('video-search-account');
+    var accResp = await fetch('/api/videos/accounts');
+    var accData = await accResp.json();
+    if (accData.code === 0) {
+        (accData.data || []).forEach(function(a) {
+            var opt = document.createElement('option');
+            opt.value = a;
+            opt.textContent = a;
+            accSelect.appendChild(opt);
+        });
+    }
+}
+
+/** 搜索栏 */
+function toggleVideoSearch() {
+    var p = document.getElementById('video-search-panel');
+    p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+function filterVideos() {
+    var nameKw = document.getElementById('video-search-name').value.trim().toLowerCase();
+    var websiteVal = document.getElementById('video-search-website').value;
+    var accountVal = document.getElementById('video-search-account').value;
+    var rows = document.querySelectorAll('#video-table tbody tr');
+    for (var i = 0; i < rows.length; i++) {
+        var cells = rows[i].querySelectorAll('td');
+        var name = (cells[1] || {}).textContent || '';
+        var website = (cells[3] || {}).textContent || '';
+        var account = (cells[4] || {}).textContent || '';
+        var show = true;
+        if (nameKw && name.toLowerCase().indexOf(nameKw) < 0) show = false;
+        if (websiteVal && website.indexOf(websiteVal) < 0) show = false;
+        if (accountVal && account.indexOf(accountVal) < 0) show = false;
+        rows[i].style.display = show ? '' : 'none';
+    }
+}
+function resetVideoSearch() {
+    document.getElementById('video-search-name').value = '';
+    document.getElementById('video-search-website').value = '';
+    document.getElementById('video-search-account').value = '';
+    filterVideos();
+}
+
+/** 弹窗 */
+function openAddVideoModal() {
+    videoEditId = null;
+    document.getElementById('video-modal-title').textContent = '添加视频';
+    document.getElementById('video-form').reset();
+    document.getElementById('video-edit-id').value = '';
+    document.getElementById('video-account-name').value = '';
+    openModal('video-modal');
+}
+
+async function openEditVideoModal(id) {
+    videoEditId = id;
+    document.getElementById('video-modal-title').textContent = '编辑视频';
+    var resp = await fetch('/api/videos');
+    var data = await resp.json();
+    if (data.code !== 0) { showToast(data.msg, 'error'); return; }
+    var item = null;
+    for (var i = 0; i < data.data.length; i++) {
+        if (data.data[i].id === id) { item = data.data[i]; break; }
+    }
+    if (!item) { showToast('未找到该视频', 'error'); return; }
+    document.getElementById('video-edit-id').value = item.id;
+    document.getElementById('video-name').value = item.video_name;
+    document.getElementById('video-url').value = item.video_url;
+    document.getElementById('video-account-name').value = item.account_name || '';
+    // 设置网站下拉
+    var sel = document.getElementById('video-website');
+    for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === item.website) {
+            sel.value = item.website;
+            break;
+        }
+    }
+    if (!sel.value) {
+        sel.value = '__custom__';
+        setTimeout(function() {
+            var input = document.getElementById('video-website-custom');
+            if (input) input.value = item.website;
+        }, 100);
+    }
+    openModal('video-modal');
+    handleWebsiteChange();
+}
+
+function handleWebsiteChange() {
+    var sel = document.getElementById('video-website');
+    var existingCustom = document.getElementById('video-website-custom-group');
+    if (existingCustom) existingCustom.remove();
+    if (sel.value === '__custom__') {
+        var div = document.createElement('div');
+        div.id = 'video-website-custom-group';
+        div.className = 'form-group';
+        div.innerHTML = '<label>自定义网站名称</label><input type="text" id="video-website-custom" placeholder="输入网站名称" style="padding:6px 10px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);width:100%;">';
+        sel.parentNode.appendChild(div);
+    }
+}
+
+async function submitVideoForm(e) {
+    e.preventDefault();
+    var name = document.getElementById('video-name').value.trim();
+    var url = document.getElementById('video-url').value.trim();
+    var sel = document.getElementById('video-website');
+    var website = sel.value;
+    if (website === '__custom__') {
+        var customInput = document.getElementById('video-website-custom');
+        website = (customInput ? customInput.value : '').trim();
+    }
+    var accountName = document.getElementById('video-account-name').value.trim();
+    if (!name || !url) { showToast('名称和链接不能为空', 'error'); return; }
+    if (!website) { showToast('请选择或输入所属网站', 'error'); return; }
+
+    var body = { video_name: name, video_url: url, website: website, account_name: accountName };
+
+    if (videoEditId) {
+        var resp = await fetch('/api/videos/' + videoEditId, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        var result = await resp.json();
+        showToast(result.msg, result.code === 0 ? 'success' : 'error');
+    } else {
+        var resp = await fetch('/api/videos', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        var result = await resp.json();
+        showToast(result.msg, result.code === 0 ? 'success' : 'error');
+    }
+    if (result.code === 0) {
+        closeModal('video-modal');
+        videoEditId = null;
+        loadVideos();
+        loadSearchOptions();
+    }
+}
+
+async function deleteVideo(id) {
+    if (!confirm('确定删除此视频?')) return;
+    var resp = await fetch('/api/videos/' + id, {method: 'DELETE'});
+    var data = await resp.json();
+    showToast(data.msg, data.code === 0 ? 'success' : 'error');
+    loadVideos();
+    loadSearchOptions();
+}
+
+// 初始化
+var historyPage = 1;
+var historyTotalPages = 1;
+
+function switchVideoTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
+    var btns = document.querySelectorAll('.tab-btn');
+    var idx = tab === 'manage' ? 0 : 1;
+    btns[idx].classList.add('active');
+    document.getElementById('tab-video-' + tab).classList.add('active');
+    if (tab === 'history') loadVideoHistory();
+}
+
+async function loadVideoHistory() {
+    historyPage = 1;
+    await fetchHistoryPage();
+}
+
+async function fetchHistoryPage() {
+    var resp = await fetch('/api/videos/history?page=' + historyPage + '&limit=50');
+    var data = await resp.json();
+    if (data.code !== 0 || !data.data) {
+        showToast(data.msg || '加载失败', 'error');
+        return;
+    }
+    var list = data.data.list || [];
+    var total = data.data.total || 0;
+    historyTotalPages = data.data.total_pages || 1;
+
+    document.getElementById('history-count').textContent = total ? '(共 ' + total + ' 条)' : '';
+    var tbody = document.querySelector('#history-table tbody');
+    if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">暂无历史数据（每日凌晨自动统计）</td></tr>';
+        document.getElementById('history-pagination').style.display = 'none';
+        return;
+    }
+    tbody.innerHTML = list.map(function(s) {
+        return '<tr>' +
+            '<td>' + escapeHtml(s.stats_date) + '</td>' +
+            '<td>' + escapeHtml(s.video_name) + '</td>' +
+            '<td>' + escapeHtml(s.website || '-') + '</td>' +
+            '<td><strong>' + s.visit_count + '</strong></td>' +
+        '</tr>';
+    }).join('');
+
+    // 分页
+    document.getElementById('history-pagination').style.display = 'flex';
+    document.getElementById('history-page-info').textContent = '第 ' + historyPage + ' / ' + historyTotalPages + ' 页';
+    document.getElementById('history-prev-btn').style.display = historyPage <= 1 ? 'none' : 'inline-block';
+    document.getElementById('history-next-btn').style.display = historyPage >= historyTotalPages ? 'none' : 'inline-block';
+}
+
+function changeHistoryPage(delta) {
+    var newPage = historyPage + delta;
+    if (newPage < 1 || newPage > historyTotalPages) return;
+    historyPage = newPage;
+    fetchHistoryPage();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadVideos();
+    loadWebsiteOptions();
+    loadSearchOptions();
+    document.getElementById('video-website').addEventListener('change', handleWebsiteChange);
+});
+</script>
+{% endblock %}

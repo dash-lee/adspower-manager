@@ -13,29 +13,107 @@
 """
 
 import json
-import datetime
+import time
 from flask import Blueprint, request, jsonify, current_app
 from backend.models import db, TaskQueue
 from backend.services.adspower_client import AdsPowerClient
 from backend.services.env_manager import EnvManager
 
+
 env_bp = Blueprint("env", __name__, url_prefix="/api/env")
 
 
 def _get_manager() -> EnvManager:
-    """
-    从 Flask 应用上下文中获取 EnvManager 实例。
-
-    Returns:
-        EnvManager 实例
-    """
+    """从 Flask 应用上下文中获取 EnvManager 实例。"""
     client: AdsPowerClient = current_app.config["ADSPOWER_CLIENT"]
     return EnvManager(client)
 
 
 # ============================================================
-# 初始化检查
+# 数据缓存助手（减少 AdsPower 请求）
 # ============================================================
+
+def _get_cache(key: str):
+    """从缓存中获取数据，过期返回 None。"""
+    cache = current_app.config.get("DATA_CACHE", {})
+    entry = cache.get(key)
+    if not entry or not entry["data"]:
+        return None
+    return entry["data"]
+
+def _set_cache(key: str, data):
+    """设置缓存数据并更新时间戳。"""
+    cache = current_app.config.get("DATA_CACHE", {})
+    entry = cache.get(key)
+    if entry:
+        entry["data"] = data
+        entry["timestamp"] = time.time()
+
+def _is_cache_fresh(key: str) -> bool:
+    """检查缓存是否还在有效期内。"""
+    cache = current_app.config.get("DATA_CACHE", {})
+    entry = cache.get(key)
+    if not entry or not entry["data"]:
+        return False
+    return (time.time() - entry["timestamp"]) < entry["ttl"]
+
+
+# ============================================================
+# 缓存刷新 API
+# ============================================================
+
+@env_bp.route("/cache/refresh", methods=["POST"])
+def refresh_cache():
+    """
+    强制刷新所有数据缓存，从 AdsPower 重新拉取。
+
+    POST /api/env/cache/refresh
+    """
+    client: AdsPowerClient = current_app.config["ADSPOWER_CLIENT"]
+
+    # 刷新环境列表
+    try:
+        all_profiles = client.get_all_profiles()
+        _set_cache("profiles", all_profiles)
+    except Exception as e:
+        return jsonify({"code": -1, "data": None, "msg": f"刷新环境列表失败: {e}"})
+
+    # 刷新已启动环境
+    try:
+        active = client.get_local_active()
+        _set_cache("active_profiles", active.get("data", {}).get("list", []))
+    except Exception:
+        pass
+
+    # 刷新代理列表
+    try:
+        proxies = client.list_proxies()
+        _set_cache("proxy_list", proxies)
+    except Exception:
+        pass
+
+    return jsonify({"code": 0, "data": None, "msg": "数据缓存已刷新"})
+
+
+# ============================================================
+# 获取缓存数据
+# ============================================================
+
+@env_bp.route("/cache/data", methods=["GET"])
+def get_cached_data():
+    """
+    获取缓存数据（用于页面初始化加载，不触发 AdsPower 请求）。
+
+    GET /api/env/cache/data
+    """
+    return jsonify({
+        "code": 0,
+        "data": {
+            "profiles": _get_cache("profiles") or [],
+            "active_profiles": _get_cache("active_profiles") or [],
+        },
+        "msg": "success",
+    })
 
 @env_bp.route("/check", methods=["GET"])
 def init_check():
@@ -111,7 +189,10 @@ def create_environment():
         "group_id": "0",               // 分组ID（默认"0"）
         "proxy_id": "xxx",             // 代理ID（可选，不传则随机选择）
         "open_url": "https://...",     // 初始打开URL（可选）
-        "use_queue": false             // 是否加入任务队列（可选，默认false直接执行）
+        "domain_name": "",             // 平台域名（可选）
+        "username": "",                // 账号（可选）
+        "password": "",                // 密码（可选）
+        "remark": ""                   // 备注（可选）
     }
     """
     data = request.get_json() or {}
@@ -120,61 +201,35 @@ def create_environment():
     proxy_id = data.get("proxy_id")
     open_url = data.get("open_url")
     env_name_prefix = data.get("env_name", f"Auto")
-    use_queue = data.get("use_queue", False)
+    domain_name = data.get("domain_name")
+    username = data.get("username")
+    password = data.get("password")
+    remark = data.get("remark")
 
     manager = _get_manager()
 
-    if use_queue:
-        # 加入任务队列
-        results = []
-        for i in range(count):
-            params = {
-                "env_name": f"{env_name_prefix}_{i+1}",
-                "group_id": group_id,
-                "proxy_id": proxy_id,
-                "open_url": open_url,
-            }
-            task = TaskQueue(
-                task_type="create_env",
-                params=json.dumps(params),
-                status="pending",
-            )
-            db.session.add(task)
-            results.append({"task_id": None, "env_name": params["env_name"]})
-        db.session.commit()
-        # 刷新获取实际任务ID
-        for i, t in enumerate(
-            TaskQueue.query.filter_by(task_type="create_env", status="pending")
-            .order_by(TaskQueue.id.desc())
-            .limit(count)
-            .all()
-        ):
-            results[i]["task_id"] = t.id
+    # 直接执行
+    results = []
+    for i in range(count):
+        env_name = f"{env_name_prefix}_{i+1}" if count > 1 else env_name_prefix
+        result = manager.create_environment(
+            env_name=env_name,
+            group_id=group_id,
+            proxy_id=proxy_id,
+            open_url=open_url,
+            domain_name=domain_name,
+            username=username,
+            password=password,
+            remark=remark,
+        )
+        results.append(result)
 
-        return jsonify({
-            "code": 0,
-            "data": {"results": results, "queued": True},
-            "msg": f"{count}个创建任务已加入队列",
-        })
-    else:
-        # 直接执行
-        results = []
-        for i in range(count):
-            env_name = f"{env_name_prefix}_{i+1}" if count > 1 else env_name_prefix
-            result = manager.create_environment(
-                env_name=env_name,
-                group_id=group_id,
-                proxy_id=proxy_id,
-                open_url=open_url,
-            )
-            results.append(result)
-
-        success_count = sum(1 for r in results if r["success"])
-        return jsonify({
-            "code": 0 if success_count > 0 else -1,
-            "data": {"results": results, "success_count": success_count, "total": count},
-            "msg": f"创建完成: {success_count}/{count} 成功",
-        })
+    success_count = sum(1 for r in results if r["success"])
+    return jsonify({
+        "code": 0 if success_count > 0 else -1,
+        "data": {"results": results, "success_count": success_count, "total": count},
+        "msg": f"创建完成: {success_count}/{count} 成功",
+    })
 
 
 # ============================================================
@@ -189,36 +244,19 @@ def delete_environments():
     POST /api/env/delete
     Body: {
         "profile_ids": ["id1", "id2"],  // 环境ID列表（必填）
-        "force": false,                  // 是否强制删除（包括保留环境）
-        "use_queue": false               // 是否加入任务队列
+        "force": false                   // 是否强制删除（包括保留环境）
     }
     """
     data = request.get_json() or {}
     profile_ids = data.get("profile_ids", [])
     force = data.get("force", False)
-    use_queue = data.get("use_queue", False)
 
     if not profile_ids:
         return jsonify({"code": -1, "data": None, "msg": "请提供要删除的环境ID列表"})
 
     manager = _get_manager()
-
-    if use_queue:
-        task = TaskQueue(
-            task_type="delete_env",
-            params=json.dumps({"profile_ids": profile_ids, "force": force}),
-            status="pending",
-        )
-        db.session.add(task)
-        db.session.commit()
-        return jsonify({
-            "code": 0,
-            "data": {"task_id": task.id},
-            "msg": f"删除任务已加入队列（{len(profile_ids)}个环境）",
-        })
-    else:
-        result = manager.delete_environments(profile_ids, force=force)
-        return jsonify({"code": 0 if result["success"] else -1, "data": result, "msg": "删除完成"})
+    result = manager.delete_environments(profile_ids, force=force)
+    return jsonify({"code": 0 if result["success"] else -1, "data": result, "msg": "删除完成"})
 
 
 # ============================================================

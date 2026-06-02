@@ -4,248 +4,285 @@
 {% block content %}
 <div class="page-header">
     <h1>🔌 代理管理</h1>
-    <p class="text-muted">管理代理服务器配置，创建环境时从此处选取</p>
+    <p class="text-muted">管理代理服务器配置</p>
 </div>
 
-<!-- 操作按钮 -->
 <div class="action-bar">
-    <button class="btn btn-primary" onclick="openAddModal()">➕ 添加代理</button>
-    <button class="btn btn-secondary" onclick="loadProxies()">🔄 刷新列表</button>
+    <div class="action-bar-left">
+        <button class="btn btn-primary" onclick="openAddProxyModal()">➕ 添加代理</button>
+        <button class="btn btn-secondary" onclick="refreshFromAdsPower()">🔄 刷新</button>
+        <button class="btn btn-secondary" onclick="loadProxies()">📋 从本地加载</button>
+    </div>
+    <button class="btn-search" onclick="toggleProxySearch()">🔍 搜索</button>
 </div>
 
-<!-- 代理列表 -->
+<!-- 可折叠搜索栏 -->
+<div id="proxy-search-panel" style="display:none;padding:12px;background:var(--bg-secondary);border-radius:var(--radius);margin-bottom:12px;">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="text" id="proxy-search-soft" placeholder="代理软件" oninput="filterProxies()" style="padding:6px 10px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);width:140px;">
+        <input type="text" id="proxy-search-host" placeholder="IP/域名" oninput="filterProxies()" style="padding:6px 10px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);width:160px;">
+        <input type="text" id="proxy-search-type" placeholder="类型" oninput="filterProxies()" style="padding:6px 10px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);width:120px;">
+        <button class="btn btn-sm btn-primary" onclick="filterProxies()">搜索</button>
+        <button class="btn btn-sm btn-secondary" onclick="resetProxySearch()">重置</button>
+    </div>
+</div>
+
 <div class="card">
     <h3>代理列表 <span id="proxy-count" class="text-muted" style="font-weight:normal;font-size:14px;"></span></h3>
     <div style="overflow-x:auto;">
         <table class="data-table" id="proxy-table">
             <thead>
                 <tr>
-                    <th>ID</th>
-                    <th>名称</th>
+                    <th>编号</th>
                     <th>代理软件</th>
-                    <th>代理类型</th>
-                    <th>主机:端口</th>
+                    <th>类型</th>
+                    <th>IP/域名</th>
+                    <th>端口</th>
                     <th>用户名</th>
-                    <th>状态</th>
+                    <th>密码</th>
                     <th>备注</th>
                     <th>操作人</th>
-                    <th>创建时间</th>
                     <th>操作</th>
                 </tr>
             </thead>
             <tbody>
-                <tr><td colspan="11" class="text-center text-muted">加载中...</td></tr>
+                <tr><td colspan="10" class="text-center text-muted">加载中...</td></tr>
             </tbody>
         </table>
     </div>
 </div>
 
-<!-- ===== 添加/编辑代理弹窗 ===== -->
-<div class="modal" id="proxy-modal">
-    <div class="modal-content" style="max-width: 600px;">
-        <span class="modal-close" onclick="closeFormModal()">&times;</span>
+<!-- 添加/编辑弹窗 -->
+<div class="modal" id="proxy-modal" style="display:none;">
+    <div class="modal-content">
+        <span class="modal-close" onclick="closeModal('proxy-modal')">&times;</span>
         <h2 id="proxy-modal-title">添加代理</h2>
         <form id="proxy-form" onsubmit="submitProxyForm(event)">
-            <input type="hidden" name="id" value="">
+            <input type="hidden" id="proxy-edit-id" value="">
             <div class="form-group">
-                <label>名称</label>
-                <input type="text" name="name" placeholder="给代理起个名字便于识别（如：美国SOCKS5-01）">
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                <div class="form-group">
-                    <label>代理软件</label>
-                    <select name="proxy_soft">
-                        <option value="other">other（其他）</option>
-                        <option value="brightdata">brightdata</option>
-                        <option value="oxylabsauto">oxylabsauto</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>代理类型</label>
-                    <select name="proxy_type">
-                        <option value="socks5">socks5</option>
-                        <option value="http">http</option>
-                        <option value="https">https</option>
-                    </select>
+                <label>代理软件 <span style="color:var(--error)">*</span></label>
+                <select id="proxy-soft" required>
+                    <option value="">-- 请选择 --</option>
+                    <option value="other">other（其他）</option>
+                    <option value="luminalum">luminalum</option>
+                    <option value="oxylabs">oxylabs</option>
+                    <option value="brightdata">brightdata</option>
+                    <option value="ip2proxies">ip2proxies</option>
+                    <option value="proxyseller">proxyseller</option>
+                </select>
+                <div id="proxy-soft-custom-group" style="display:none;margin-top:6px;">
+                    <input type="text" id="proxy-soft-custom" placeholder="输入自定义代理软件名称" style="padding:6px 10px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);width:100%;">
                 </div>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                <div class="form-group">
-                    <label>主机地址 <span style="color:var(--error)">*</span></label>
-                    <input type="text" name="proxy_host" placeholder="如 1.2.3.4" required>
-                </div>
-                <div class="form-group">
-                    <label>端口 <span style="color:var(--error)">*</span></label>
-                    <input type="text" name="proxy_port" placeholder="如 1080" required>
-                </div>
+            <div class="form-group">
+                <label>代理类型</label>
+                <select id="proxy-type">
+                    <option value="http">http</option>
+                    <option value="socks5">socks5</option>
+                    <option value="ssh">ssh</option>
+                </select>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                <div class="form-group">
-                    <label>用户名（可选）</label>
-                    <input type="text" name="proxy_user" placeholder="代理用户名">
-                </div>
-                <div class="form-group">
-                    <label>密码（可选）</label>
-                    <input type="password" name="proxy_password" placeholder="代理密码">
-                </div>
+            <div class="form-group">
+                <label>IP/域名 <span style="color:var(--error)">*</span></label>
+                <input type="text" id="proxy-host" placeholder="如 192.168.1.1" required>
+            </div>
+            <div class="form-group">
+                <label>端口</label>
+                <input type="number" id="proxy-port" placeholder="如 8080" value="0" min="0" max="65535">
+            </div>
+            <div class="form-group">
+                <label>用户名</label>
+                <input type="text" id="proxy-user" placeholder="代理认证用户名">
+            </div>
+            <div class="form-group">
+                <label>密码</label>
+                <input type="text" id="proxy-password" placeholder="代理认证密码">
             </div>
             <div class="form-group">
                 <label>备注</label>
-                <input type="text" name="remark" placeholder="说明这个代理的用途">
-            </div>
-            <div class="form-group">
-                <label>操作人</label>
-                <input type="text" name="operator" placeholder="谁操作的（如 admin / 张三）">
+                <input type="text" id="proxy-remark" placeholder="说明">
             </div>
             <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
-                <button type="button" class="btn btn-secondary" onclick="closeFormModal()">取消</button>
-                <button type="submit" class="btn btn-primary">💾 保存</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('proxy-modal')">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
             </div>
         </form>
     </div>
 </div>
-
 {% endblock %}
 
 {% block extra_js %}
 <script>
-// ===== 模态框 =====
-function openAddModal() {
-    document.getElementById('proxy-modal-title').textContent = '添加代理';
-    const form = document.getElementById('proxy-form');
-    form.reset();
-    form.id.value = '';
-    document.getElementById('proxy-modal').style.display = 'flex';
-}
+var proxyEditId = null;
 
-function openEditModal(proxy) {
-    document.getElementById('proxy-modal-title').textContent = '编辑代理';
-    const form = document.getElementById('proxy-form');
-    form.id.value = proxy.id;
-    form.name.value = proxy.name || '';
-    form.proxy_soft.value = proxy.proxy_soft || 'other';
-    form.proxy_type.value = proxy.proxy_type || 'socks5';
-    form.proxy_host.value = proxy.proxy_host || '';
-    form.proxy_port.value = proxy.proxy_port || '';
-    form.proxy_user.value = proxy.proxy_user || '';
-    form.proxy_password.value = '';  // 密码不传回，留空表示不改
-    form.remark.value = proxy.remark || '';
-    form.operator.value = proxy.operator || '';
-    document.getElementById('proxy-modal').style.display = 'flex';
-}
-
-function closeFormModal() {
-    document.getElementById('proxy-modal').style.display = 'none';
-}
-
-// ===== 加载代理列表 =====
 async function loadProxies() {
-    const resp = await fetch('/api/config/proxy');
-    const data = await resp.json();
-    const tbody = document.querySelector('#proxy-table tbody');
-    document.getElementById('proxy-count').textContent = data.data ? `(${data.data.length} 个)` : '';
-
-    if (data.code === 0 && data.data.length > 0) {
-        tbody.innerHTML = data.data.map(p => `
-            <tr>
-                <td>${p.id}</td>
-                <td><strong>${escapeHtml(p.name) || '-'}</strong></td>
-                <td>${escapeHtml(p.proxy_soft)}</td>
-                <td><code>${escapeHtml(p.proxy_type)}</code></td>
-                <td>${escapeHtml(p.proxy_host)}:${escapeHtml(p.proxy_port)}</td>
-                <td>${escapeHtml(p.proxy_user) || '-'}</td>
-                <td>
-                    <span class="badge ${p.enabled ? 'badge-success' : 'badge-error'}">
-                        ${p.enabled ? '🟢 启用' : '🔴 禁用'}
-                    </span>
-                </td>
-                <td>${escapeHtml(p.remark) || '-'}</td>
-                <td>${escapeHtml(p.operator) || '-'}</td>
-                <td><small>${formatTime(p.created_at)}</small></td>
-                <td style="white-space:nowrap;">
-                    <button class="btn btn-sm btn-secondary" onclick='editProxy(${JSON.stringify(p).replace(/'/g, "&#39;")})'>✏️</button>
-                    <button class="btn btn-sm ${p.enabled ? 'btn-warning' : 'btn-primary'}" onclick="toggleProxy(${p.id}, ${p.enabled ? 0 : 1})">${p.enabled ? '禁用' : '启用'}</button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteProxy(${p.id}, '${escapeHtml(p.name || p.proxy_host + ':' + p.proxy_port)}')">🗑️</button>
-                </td>
-            </tr>
-        `).join('');
-    } else {
-        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">暂无代理配置，点击「添加代理」开始</td></tr>';
+    var resp = await fetch('/api/config/proxy');
+    var data = await resp.json();
+    var tbody = document.querySelector('#proxy-table tbody');
+    if (data.code === 0) {
+        var html = '';
+        for (var i = 0; i < data.data.length; i++) {
+            var p = data.data[i];
+            html += '<tr>' +
+                '<td>' + p.id + '</td>' +
+                '<td>' + escapeHtml(p.proxy_soft || '-') + '</td>' +
+                '<td>' + escapeHtml(p.proxy_type || '-') + '</td>' +
+                '<td><code>' + escapeHtml(p.proxy_host || '-') + '</code></td>' +
+                '<td>' + (p.proxy_port || '-') + '</td>' +
+                '<td>' + escapeHtml(p.proxy_user || '-') + '</td>' +
+                '<td>' + escapeHtml(p.proxy_password || '-') + '</td>' +
+                '<td><small>' + escapeHtml(p.remark || '-') + '</small></td>' +
+                '<td>' + escapeHtml(p.operator || '-') + '</td>' +
+                '<td><div class="action-buttons">' +
+                    '<button class="btn-sm btn-edit" onclick="openEditProxyModal(' + p.id + ')">编辑</button>' +
+                    '<button class="btn-danger-sm" onclick="deleteProxy(' + p.id + ')">删除</button>' +
+                '</div></td>' +
+            '</tr>';
+        }
+        tbody.innerHTML = html || '<tr><td colspan="10" class="text-center text-muted">暂无代理</td></tr>';
     }
 }
 
-// 解决 JSON.stringify 在 onclick 中的特殊字符问题 — 用 data 属性传值
-function editProxy(proxy) {
-    openEditModal(proxy);
+// 从 AdsPower 同步代理列表
+async function refreshFromAdsPower() {
+    showToast('正在从 AdsPower 同步代理...', 'info');
+    try {
+        var resp = await fetch('/api/config/proxy/sync_from_adspower', {method: 'POST'});
+        var data = await resp.json();
+        showToast(data.msg, data.code === 0 ? 'success' : 'error');
+        if (data.code === 0) loadProxies();
+    } catch(e) {
+        showToast('同步失败: ' + e.message, 'error');
+    }
 }
 
-// ===== 提交表单（添加/编辑） =====
+// 搜索栏
+function toggleProxySearch() {
+    var p = document.getElementById('proxy-search-panel');
+    p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+function filterProxies() {
+    var softKw = document.getElementById('proxy-search-soft').value.trim().toLowerCase();
+    var hostKw = document.getElementById('proxy-search-host').value.trim().toLowerCase();
+    var typeKw = document.getElementById('proxy-search-type').value.trim().toLowerCase();
+    var rows = document.querySelectorAll('#proxy-table tbody tr');
+    for (var i = 0; i < rows.length; i++) {
+        var cells = rows[i].querySelectorAll('td');
+        var soft = (cells[1] || {}).textContent || '';
+        var host = (cells[3] || {}).textContent || '';
+        var type = (cells[2] || {}).textContent || '';
+        var show = true;
+        if (softKw && soft.toLowerCase().indexOf(softKw) < 0) show = false;
+        if (hostKw && host.toLowerCase().indexOf(hostKw) < 0) show = false;
+        if (typeKw && type.toLowerCase().indexOf(typeKw) < 0) show = false;
+        rows[i].style.display = show ? '' : 'none';
+    }
+}
+function resetProxySearch() {
+    document.getElementById('proxy-search-soft').value = '';
+    document.getElementById('proxy-search-host').value = '';
+    document.getElementById('proxy-search-type').value = '';
+    filterProxies();
+}
+
+// 代理软件选择
+function onProxySoftChange() {
+    var sel = document.getElementById('proxy-soft');
+    var g = document.getElementById('proxy-soft-custom-group');
+    g.style.display = sel.value === 'other' ? 'block' : 'none';
+}
+
+// 弹窗
+function openAddProxyModal() {
+    proxyEditId = null;
+    document.getElementById('proxy-modal-title').textContent = '添加代理';
+    document.getElementById('proxy-form').reset();
+    document.getElementById('proxy-edit-id').value = '';
+    onProxySoftChange();
+    openModal('proxy-modal');
+}
+
+async function openEditProxyModal(id) {
+    proxyEditId = id;
+    document.getElementById('proxy-modal-title').textContent = '编辑代理';
+    var resp = await fetch('/api/config/proxy');
+    var data = await resp.json();
+    if (data.code !== 0) { showToast(data.msg, 'error'); return; }
+    var item = null;
+    for (var i = 0; i < data.data.length; i++) {
+        if (data.data[i].id === id) { item = data.data[i]; break; }
+    }
+    if (!item) { showToast('未找到该代理', 'error'); return; }
+    document.getElementById('proxy-edit-id').value = item.id;
+    document.getElementById('proxy-soft').value = item.proxy_soft;
+    document.getElementById('proxy-type').value = item.proxy_type || 'http';
+    document.getElementById('proxy-host').value = item.proxy_host || '';
+    document.getElementById('proxy-port').value = item.proxy_port || 0;
+    document.getElementById('proxy-user').value = item.proxy_user || '';
+    document.getElementById('proxy-password').value = item.proxy_password || '';
+    document.getElementById('proxy-remark').value = item.remark || '';
+    onProxySoftChange();
+    // 如果代理软件是自定义的
+    if (item.proxy_soft && !['other','luminalum','oxylabs','brightdata','ip2proxies','proxyseller'].includes(item.proxy_soft)) {
+        document.getElementById('proxy-soft').value = 'other';
+        document.getElementById('proxy-soft-custom').value = item.proxy_soft;
+        onProxySoftChange();
+    }
+    openModal('proxy-modal');
+}
+
 async function submitProxyForm(e) {
     e.preventDefault();
-    const form = document.getElementById('proxy-form');
-    const fd = new FormData(form);
-    const body = Object.fromEntries(fd.entries());
-    const id = body.id;
-
-    // 构建请求体
-    const payload = {
-        name: body.name,
-        proxy_soft: body.proxy_soft,
-        proxy_type: body.proxy_type,
-        proxy_host: body.proxy_host,
-        proxy_port: body.proxy_port,
-        proxy_user: body.proxy_user,
-        proxy_password: body.proxy_password,
-        remark: body.remark,
-        operator: body.operator,
-        enabled: 1,
+    var soft = document.getElementById('proxy-soft').value;
+    if (soft === 'other') {
+        soft = document.getElementById('proxy-soft-custom').value.trim() || 'other';
+    }
+    var host = document.getElementById('proxy-host').value.trim();
+    if (!soft || !host) { showToast('代理软件和IP不能为空', 'error'); return; }
+    var body = {
+        proxy_soft: soft,
+        proxy_type: document.getElementById('proxy-type').value,
+        proxy_host: host,
+        proxy_port: parseInt(document.getElementById('proxy-port').value) || 0,
+        proxy_user: document.getElementById('proxy-user').value.trim(),
+        proxy_password: document.getElementById('proxy-password').value,
+        remark: document.getElementById('proxy-remark').value.trim(),
     };
-
-    let resp;
-    if (id) {
-        // 编辑：PUT
-        resp = await fetch('/api/config/proxy/' + id, {
+    if (proxyEditId) {
+        var resp = await fetch('/api/config/proxy/' + proxyEditId, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
+            body: JSON.stringify(body)
         });
+        var result = await resp.json();
+        showToast(result.msg, result.code === 0 ? 'success' : 'error');
     } else {
-        // 新建：POST
-        resp = await fetch('/api/config/proxy', {
+        var resp = await fetch('/api/config/proxy', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
+            body: JSON.stringify(body)
         });
+        var result = await resp.json();
+        showToast(result.msg, result.code === 0 ? 'success' : 'error');
     }
-
-    const data = await resp.json();
-    showToast(data.msg, data.code === 0 ? 'success' : 'error');
-    if (data.code === 0) {
-        closeFormModal();
+    if (result.code === 0) {
+        closeModal('proxy-modal');
+        proxyEditId = null;
         loadProxies();
     }
 }
 
-// ===== 启用/禁用 =====
-async function toggleProxy(id, enabled) {
-    await fetch('/api/config/proxy/' + id, {
-        method: 'PUT',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({enabled: enabled})
-    });
-    showToast(enabled ? '已启用' : '已禁用', 'success');
+async function deleteProxy(id) {
+    if (!confirm('确定删除此代理配置?')) return;
+    var resp = await fetch('/api/config/proxy/' + id, {method: 'DELETE'});
+    var data = await resp.json();
+    showToast(data.msg, data.code === 0 ? 'success' : 'error');
     loadProxies();
 }
 
-// ===== 删除 =====
-async function deleteProxy(id, label) {
-    if (!confirm(`确定删除代理「${label}」？此操作不可撤销。`)) return;
-    await fetch('/api/config/proxy/' + id, {method: 'DELETE'});
-    showToast('代理已删除', 'success');
+document.addEventListener('DOMContentLoaded', function() {
     loadProxies();
-}
-
-// 初始化
-document.addEventListener('DOMContentLoaded', loadProxies);
+    document.getElementById('proxy-soft').addEventListener('change', onProxySoftChange);
+});
 </script>
 {% endblock %}

@@ -98,7 +98,8 @@
             const perms = data.data.permissions || [];
             const permPageMap = {
                 dashboard: '/dashboard', environments: '/environments',
-                proxy: '/proxy', config: '/config', logs: '/logs'
+                proxy: '/proxy', videos: '/videos',
+                config: '/config', logs: '/logs', scripts: '/scripts', executions: '/executions'
             };
             let redirectTo = '/dashboard'; // 默认
             if (data.data.role === 'admin') {

@@ -21,7 +21,7 @@ import sys
 # 确保项目根目录在 Python 路径中
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Flask, render_template, jsonify, session
+from flask import Flask, render_template, jsonify, session, redirect, url_for, request
 from flask_cors import CORS
 from loguru import logger
 from datetime import timedelta
@@ -34,6 +34,9 @@ from backend.routes.auth_routes import auth_bp, login_required, admin_required, 
 from backend.services.adspower_client import AdsPowerClient
 from backend.services.scheduler import TaskScheduler
 from backend.models import GeneralConfig
+from backend.scripts_store.script_routes import scripts_bp
+from backend.routes.video_routes import video_bp
+from backend.scripts_store.script_manager import ScriptManager
 
 
 def _get_api_config() -> tuple:
@@ -81,20 +84,36 @@ def create_app() -> Flask:
     # ---- 初始化数据库 ----
     init_db(app)
 
-    # ---- 初始化 AdsPower 客户端 ----
-    api_url, api_key = _get_api_config()
-    client = AdsPowerClient(api_url=api_url, api_key=api_key)
-    app.config["ADSPOWER_CLIENT"] = client
+    # ---- 添加数据缓存（减少 AdsPower 请求）----
+    app.config["DATA_CACHE"] = {
+        "profiles": {"data": None, "timestamp": 0, "ttl": 300},
+        "active_profiles": {"data": None, "timestamp": 0, "ttl": 60},
+        "proxy_list": {"data": None, "timestamp": 0, "ttl": 300},
+    }
 
-    # ---- 初始化定时调度器 ----
-    scheduler = TaskScheduler(client)
-    app.config["SCHEDULER"] = scheduler
+    # ---- 初始化 AdsPower 客户端（在 app_context 中确保能正确读取配置）----
+    with app.app_context():
+        api_url, api_key = _get_api_config()
+        client = AdsPowerClient(api_url=api_url, api_key=api_key)
+        app.config["ADSPOWER_CLIENT"] = client
+
+        logger.info(f"AdsPower 客户端初始化: url={api_url}, key_configured={bool(api_key)}")
+
+        # ---- 初始化定时调度器 ----
+        scheduler = TaskScheduler(client, app=app)
+        app.config["SCHEDULER"] = scheduler
 
     # ---- 注册蓝图 ----
     app.register_blueprint(auth_bp)
     app.register_blueprint(config_bp)
     app.register_blueprint(env_bp)
     app.register_blueprint(log_bp)
+    app.register_blueprint(scripts_bp)
+    app.register_blueprint(video_bp)
+
+    # ---- 初始化脚本管理器 ----
+    script_manager = ScriptManager(app)
+    app.config["SCRIPT_MANAGER"] = script_manager
 
     # ---- 全局登录 + 权限保护 ----
     # 页面路径 → 权限 key 映射
@@ -104,6 +123,9 @@ def create_app() -> Flask:
         "/proxy": "proxy",
         "/config": "config",
         "/logs": "logs",
+        "/scripts": "scripts",
+        "/executions": "executions",
+        "/videos": "videos",
         "/users": "users",
     }
 
@@ -120,8 +142,7 @@ def create_app() -> Flask:
         if "user_id" not in flask_session:
             if request.path.startswith("/api/"):
                 return jsonify({"code": -1, "data": None, "msg": "未登录，请先登录"}), 401
-            from flask import redirect as _redirect
-            return _redirect(url_for("auth.login_page"))
+            return redirect(url_for("auth.login_page"))
 
         # 权限检查：admin 跳过，非 admin 按页面权限校验
         if flask_session.get("role") != "admin":
@@ -195,6 +216,24 @@ def create_app() -> Flask:
         """用户管理页面（仅 admin）"""
         return render_template("users.html")
 
+    @app.route("/scripts")
+    @login_required
+    def scripts_page():
+        """脚本管理页面"""
+        return render_template("scripts.html")
+
+    @app.route("/executions")
+    @login_required
+    def executions_page():
+        """执行状态页面"""
+        return render_template("execution_status.html")
+
+    @app.route("/videos")
+    @login_required
+    def videos_page():
+        """视频管理页面"""
+        return render_template("videos.html")
+
     # ---- 系统 API ----
     @app.route("/api/status", methods=["GET"])
     @login_required
@@ -208,6 +247,7 @@ def create_app() -> Flask:
             "code": 0,
             "data": {
                 "adspower_api": api_url,
+                "api_key_ok": bool(api_key),
                 "adspower_ok": client.check_status(),
                 "scheduler_running": scheduler._scheduler.running if scheduler._scheduler else False,
                 "scheduler_jobs": scheduler.get_jobs(),
@@ -274,13 +314,20 @@ def create_app() -> Flask:
 
     @app.errorhandler(500)
     def server_error(e):
-        logger.error(f"服务器错误: {e}")
+        logger.exception(f"服务器错误: {e}")
         return jsonify({"code": -1, "data": None, "msg": "服务器内部错误"}), 500
 
     # ---- 启动时初始化 ----
     with app.app_context():
         # 创建默认 admin 账号（仅在首次启动时）
         seed_admin(app)
+
+        # 扫描脚本目录，确保 scripts/ 同步到 DB ScriptTask 表
+        try:
+            script_manager.list_scripts("all")
+            logger.info("脚本目录已扫描")
+        except Exception as e:
+            logger.warning(f"脚本目录扫描失败: {e}")
 
         logger.info("===== Ads Manager 环境管理后端启动 =====")
         logger.info(f"AdsPower API 地址: {api_url}")

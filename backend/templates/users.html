@@ -97,8 +97,11 @@ const ALL_PERMS = [
     {key:'dashboard',    label:'📊 总览'},
     {key:'environments', label:'🌐 环境管理'},
     {key:'proxy',        label:'🔌 代理管理'},
+    {key:'videos',       label:'🎬 视频管理'},
     {key:'config',       label:'⚙️ 配置管理'},
     {key:'logs',         label:'📋 日志查看'},
+    {key:'scripts',      label:'🤖 脚本管理'},
+    {key:'executions',   label:'📈 执行状态'},
 ];
 
 function openModal(id) { document.getElementById(id).style.display = 'flex'; }
@@ -131,21 +134,26 @@ async function loadUsers() {
     const tbody = document.querySelector('#users-table tbody');
     if (data.code === 0) {
         tbody.innerHTML = data.data.map(u => {
-            const permLabels = (u.permissions || []).map(k => {
-                const p = ALL_PERMS.find(x => x.key === k);
-                return p ? p.label.split(' ')[0] : k;
-            }).join(' ') || '<span style="color:var(--text-muted)">无权限</span>';
+            const isAdmin = u.role === 'admin';
+            const permLabels = isAdmin
+                ? '<span style="color:var(--success);font-weight:bold;">🔓 全部权限</span>'
+                : (u.permissions || []).map(k => {
+                    const p = ALL_PERMS.find(x => x.key === k);
+                    return p ? p.label.split(' ')[0] : k;
+                }).join(' ') || '<span style="color:var(--text-muted)">无权限</span>';
             return `
             <tr>
                 <td>${u.id}</td>
-                <td><strong>${escapeHtml(u.username)}</strong> ${u.role === 'admin' ? '<span class="badge badge-info">管理员</span>' : ''}</td>
-                <td>${u.role === 'admin' ? '👑 管理员（全部权限）' : '👤 普通用户'}</td>
+                <td><strong>${escapeHtml(u.username)}</strong> ${isAdmin ? '<span class="badge badge-info">管理员</span>' : ''}</td>
+                <td>${isAdmin ? '👑 管理员（全部权限）' : '👤 普通用户'}</td>
                 <td style="font-size:12px;">${permLabels}</td>
                 <td><span class="badge ${u.is_active ? 'badge-success' : 'badge-error'}">${u.is_active ? '启用' : '禁用'}</span></td>
                 <td><small>${formatTime(u.created_at)}</small></td>
                 <td>
-                    <button class="btn btn-sm btn-secondary" onclick='openEditModal(${JSON.stringify(u)})'>✏️</button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id}, '${escapeHtml(u.username)}')">🗑️</button>
+                    <div class="action-buttons">
+                        <button class="btn-sm btn-edit" onclick='openEditModal(${JSON.stringify(u)})'>编辑</button>
+                        ${isAdmin ? '' : `<button class="btn-danger-sm" onclick="deleteUser(${u.id}, '${escapeHtml(u.username)}')">删除</button>`}
+                    </div>
                 </td>
             </tr>
             `;
